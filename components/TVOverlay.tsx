@@ -1,0 +1,1471 @@
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Peer } from 'peerjs';
+import { LiveMatchState, Team, Tournament, User } from '../types';
+import { ScoreControl } from './ScoreControl';
+import { RotationView } from './RotationView';
+
+interface TVOverlayProps {
+  match: LiveMatchState;
+  onUpdateMatch?: (updates: Partial<LiveMatchState>) => void;
+  teamA: Team;
+  teamB: Team;
+  tournament?: Tournament | null;
+  currentUser?: User | null;
+  onExit: () => void;
+  onLogout?: () => void;
+  onBack?: () => void; // New prop for Viewers to go back to Dashboard
+  onNextSet?: () => void;
+  nextSetCountdown?: number | null;
+  showStatsOverlay?: boolean;
+  showScoreboard?: boolean;
+  isCloudConnected?: boolean;
+  // Control Handlers
+  onPoint?: (teamId: string, type: 'attack' | 'block' | 'ace' | 'opponent_error' | 'yellow_card' | 'red_card', playerId?: string) => void;
+  onSubtractPoint?: (teamId: string) => void;
+  onRequestTimeout?: (teamId: string) => void;
+  onRequestSub?: (teamId: string) => void;
+  onModifyRotation?: (teamId: string) => void;
+  onSetServe?: (teamId: string) => void;
+}
+
+const TVOverlay: React.FC<TVOverlayProps> = ({ 
+  match, 
+  teamA, 
+  teamB, 
+  tournament,
+  currentUser,
+  onExit, 
+  onNextSet,
+  nextSetCountdown,
+  showStatsOverlay = false,
+  showScoreboard = true,
+  isCloudConnected = true,
+  onUpdateMatch,
+  onPoint,
+  onSubtractPoint,
+  onRequestTimeout,
+  onRequestSub,
+  onModifyRotation,
+  onSetServe
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const isViewer = currentUser?.role === 'VIEWER';
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role?.includes('COACH');
+
+  // PeerJS State
+  const isBroadcasting = true; // Hardcoded to true now since toggle was removed
+  const [viewerStream, setViewerStream] = useState<MediaStream | null>(null);
+  
+  // Controls State
+  const [showControls, setShowControls] = useState(false);
+
+  // Transition States
+  const [stingerAnim, setStingerAnim] = useState<'idle' | 'in' | 'out'>('idle');
+  const [boardAnim, setBoardAnim] = useState<'idle' | 'in' | 'out'>('idle');
+  const [renderScoreboard, setRenderScoreboard] = useState(showScoreboard);
+  const [visibleScoreboard, setVisibleScoreboard] = useState(showScoreboard); // keep for prop sync logic
+  
+  const [visibleStats, setVisibleStats] = useState(showStatsOverlay);
+  const [isConstructing, setIsConstructing] = useState(false);
+
+  // New features state
+  const [hawkEyeVisible, setHawkEyeVisible] = useState(false);
+  const [pointBanner, setPointBanner] = useState<{ text: string, color: string } | null>(null);
+
+  useEffect(() => {
+     if (match.tvSettings?.triggerHawkEye) {
+         setHawkEyeVisible(true);
+         const t = setTimeout(() => setHawkEyeVisible(false), 5000); // show for 5 seconds
+         return () => clearTimeout(t);
+     }
+  }, [match.tvSettings?.triggerHawkEye]);
+
+  // Set Point / Match Point Logic
+  const prevScore = useRef({ a: match.scoreA, b: match.scoreB });
+  useEffect(() => {
+      // Calculate current wins
+      let winsA = 0; let winsB = 0;
+      match.sets.forEach(s => { if (s.scoreA > s.scoreB) winsA++; else if(s.scoreB > s.scoreA) winsB++; });
+      const requiredWins = Math.ceil((match.config.maxSets || 3) / 2);
+      const isTieBreak = match.currentSet === (match.config.maxSets || 3);
+      const targetScore = isTieBreak ? (match.config.tieBreakPoints || 15) : (match.config.pointsPerSet || 25);
+
+      const checkPoint = (currentScoreA: number, currentScoreB: number, prevA: number, prevB: number) => {
+          let teamAPoint = (currentScoreA >= targetScore - 1) && (currentScoreA - currentScoreB >= 1);
+          let teamBPoint = (currentScoreB >= targetScore - 1) && (currentScoreB - currentScoreA >= 1);
+
+          // Only trigger if it just became point
+          let wasTeamAPoint = (prevA >= targetScore - 1) && (prevA - prevB >= 1);
+          let wasTeamBPoint = (prevB >= targetScore - 1) && (prevB - prevA >= 1);
+
+          if (teamAPoint && !wasTeamAPoint) {
+             const isMatchPoint = winsA === requiredWins - 1;
+             setPointBanner({ text: isMatchPoint ? 'MATCH POINT' : 'SET POINT', color: '#827DFF' });
+             setTimeout(() => setPointBanner(null), 3000);
+          } else if (teamBPoint && !wasTeamBPoint) {
+             const isMatchPoint = winsB === requiredWins - 1;
+             setPointBanner({ text: isMatchPoint ? 'MATCH POINT' : 'SET POINT', color: '#4C8BFF' });
+             setTimeout(() => setPointBanner(null), 3000);
+          }
+      };
+
+      checkPoint(match.scoreA, match.scoreB, prevScore.current.a, prevScore.current.b);
+      prevScore.current = { a: match.scoreA, b: match.scoreB };
+  }, [match.scoreA, match.scoreB, match.currentSet, match.sets, match.config]);
+  // const [showRotationView, setShowRotationView] = useState(false); // Removed, now using match.showRotation
+
+  // Camera Selection State
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const chromaMode = 'none'; // Replaced local state with fallback default
+  const [showUI, setShowUI] = useState(true);
+
+  // PeerJS Logic (Admin - Broadcaster)
+  useEffect(() => {
+      if (!isAdmin || !isBroadcasting || !videoRef.current || !videoRef.current.srcObject) return;
+
+      const stream = videoRef.current.srcObject as MediaStream;
+      const peer = new Peer();
+
+      peer.on('open', (id) => {
+          console.log('My peer ID is: ' + id);
+          if (onUpdateMatch) {
+              onUpdateMatch({ adminPeerId: id });
+          }
+      });
+
+      peer.on('call', (call) => {
+          call.answer(stream); // Answer the call with an A/V stream.
+      });
+
+      return () => {
+          peer.destroy();
+          if (onUpdateMatch) {
+             // onUpdateMatch({ adminPeerId: undefined }); // Optional: clear ID on stop
+          }
+      };
+  }, [isAdmin, isBroadcasting, selectedDeviceId]); // Re-run if camera changes
+
+  // PeerJS Logic (Viewer - Receiver)
+  useEffect(() => {
+      if (!isViewer || !match.adminPeerId || viewerStream) return;
+
+      const peer = new Peer();
+
+      peer.on('open', () => {
+          // const conn = peer.connect(match.adminPeerId!); // Not needed for stream only
+          const call = peer.call(match.adminPeerId!, new MediaStream()); // Call to get stream
+
+          call.on('stream', (remoteStream) => {
+              setViewerStream(remoteStream);
+              if (videoRef.current) {
+                  videoRef.current.srcObject = remoteStream;
+                  videoRef.current.play().catch(e => console.error("Error playing remote stream", e));
+              }
+          });
+      });
+
+      return () => {
+          peer.destroy();
+      };
+  }, [isViewer, match.adminPeerId]);
+
+  // Determine if it's "Pre-Match" based on status
+  const isPreMatch = match.status === 'warmup';
+  
+  // Determine if set is finished
+  const isSetFinished = match.status === 'finished_set';
+
+  // Broadcast Settings
+  const isVertical = match.tvSettings?.style === 'vertical';
+
+  // Deprecated auto-detect orientation from local window since it's now cloud-controlled
+  // (Removed window.addEventListener('resize', ...))
+
+  // Handle Transitions ("Stinger Effect")
+  useEffect(() => {
+    let timers: NodeJS.Timeout[] = [];
+    // Scoreboard Toggle Transition
+    if (showScoreboard !== visibleScoreboard) {
+        if (showScoreboard) {
+            // Turn ON: Logo In -> Logo Out -> Scoreboard In
+            setStingerAnim('in');
+            timers.push(setTimeout(() => {
+                setStingerAnim('out');
+                timers.push(setTimeout(() => {
+                    setStingerAnim('idle');
+                    setRenderScoreboard(true);
+                    setBoardAnim('in');
+                    timers.push(setTimeout(() => setBoardAnim('idle'), 800));
+                }, 800));
+            }, 800));
+            setVisibleScoreboard(true);
+        } else {
+            // Turn OFF: Scoreboard Out -> Logo In -> Logo Out
+            setBoardAnim('out');
+            timers.push(setTimeout(() => {
+                setRenderScoreboard(false);
+                setBoardAnim('idle');
+                setStingerAnim('in');
+                timers.push(setTimeout(() => {
+                    setStingerAnim('out');
+                    timers.push(setTimeout(() => setStingerAnim('idle'), 800));
+                }, 800));
+            }, 800));
+            setVisibleScoreboard(false);
+        }
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [showScoreboard]); 
+  
+  useEffect(() => {
+    // Stats Toggle Transition
+    if (showStatsOverlay !== visibleStats) {
+        if (showStatsOverlay) {
+            // Turn ON
+            setStingerAnim('in');
+            const hideLogoTimer = setTimeout(() => {
+                setStingerAnim('idle');
+                setIsConstructing(true);
+            }, 700);
+            
+            const showStatsTimer = setTimeout(() => {
+                setVisibleStats(true);
+            }, 1200);
+
+            const endConstructionTimer = setTimeout(() => {
+                setIsConstructing(false);
+            }, 1700);
+            
+            return () => { clearTimeout(hideLogoTimer); clearTimeout(showStatsTimer); clearTimeout(endConstructionTimer); };
+        } else {
+            // Turn OFF
+            setVisibleStats(false);
+            setStingerAnim('out');
+            const resetAnimTimer = setTimeout(() => {
+                setStingerAnim('idle');
+            }, 700);
+            return () => clearTimeout(resetAnimTimer);
+        }
+    }
+  }, [showStatsOverlay]);
+
+  // ... (rest of the code)
+
+  // Enumerate Devices on Mount (Admin Only)
+  useEffect(() => {
+      if (isViewer) return;
+      
+      // Check support
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+          console.warn("Media Devices API not supported");
+          return;
+      }
+
+      const getDevices = async () => {
+          try {
+              // Request permission first to get labels, handle rejection gracefully
+              try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                  // Stop the stream immediately, we just needed permission
+                  stream.getTracks().forEach(track => track.stop());
+              } catch (e) {
+                  console.warn("Permission check failed, proceeding without labels if possible");
+              }
+              
+              const devices = await navigator.mediaDevices.enumerateDevices();
+              const videoInputs = devices.filter(d => d.kind === 'videoinput');
+              setVideoDevices(videoInputs);
+              if (videoInputs.length > 0 && !selectedDeviceId) {
+                  // Prefer back camera if available, otherwise first
+                  const backCam = videoInputs.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
+                  setSelectedDeviceId(backCam ? backCam.deviceId : videoInputs[0].deviceId);
+              }
+          } catch (e) {
+              console.warn("Error enumerating devices", e);
+          }
+      };
+      getDevices();
+  }, [isViewer]);
+
+  // Handle Remote Camera Switch
+  useEffect(() => {
+     if (match.tvSettings?.forceCameraChangeTrigger) {
+         if (videoDevices.length > 1) {
+             const currentIndex = videoDevices.findIndex(d => d.deviceId === selectedDeviceId);
+             const nextIndex = (currentIndex + 1) % videoDevices.length;
+             setSelectedDeviceId(videoDevices[nextIndex].deviceId);
+         }
+     }
+  }, [match.tvSettings?.forceCameraChangeTrigger]);
+
+  // Activate Camera Logic
+  useEffect(() => {
+    if (isViewer) return; // Skip camera for viewers
+    if (chromaMode !== 'none') {
+       // Stop any existing stream
+       if (videoRef.current && videoRef.current.srcObject) {
+         try {
+            const oldStream = videoRef.current.srcObject as MediaStream;
+            oldStream.getTracks().forEach(track => track.stop());
+         } catch(e) { }
+         videoRef.current.srcObject = null;
+       }
+       setCameraError(null);
+       return;
+    }
+
+    let activeStream: MediaStream | null = null;
+    let isMounted = true;
+
+    async function setupCamera() {
+      // Reset error state
+      setCameraError(null);
+
+      // FORCE STOP previous stream if exists in ref
+      if (videoRef.current && videoRef.current.srcObject) {
+         try {
+            const oldStream = videoRef.current.srcObject as MediaStream;
+            oldStream.getTracks().forEach(track => track.stop());
+         } catch(e) { /* ignore */ }
+         if (videoRef.current) videoRef.current.srcObject = null;
+      }
+
+      // Check if API exists
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          if (isMounted) setCameraError("Navegador no soporta cámara o contexto inseguro (HTTPS requerido).");
+          return;
+      }
+
+      try {
+        const constraints: MediaStreamConstraints = {
+            video: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: 'environment' }
+        };
+
+        // Try high res if possible
+        if (!selectedDeviceId) {
+             // @ts-ignore
+             constraints.video.width = { ideal: 1920 };
+             // @ts-ignore
+             constraints.video.height = { ideal: 1080 };
+        }
+
+        console.log("Requesting camera with constraints:", constraints);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        if (isMounted) {
+            activeStream = stream;
+            if (videoRef.current) {
+                videoRef.current.srcObject = activeStream;
+                await videoRef.current.play().catch(e => console.warn("Autoplay blocked", e));
+            }
+        } else {
+            stream.getTracks().forEach(track => track.stop());
+        }
+
+      } catch (err) {
+        console.warn("High-spec camera failed, trying fallback...", err);
+        
+        try {
+            if (!isMounted) return;
+            // Stop any previous stream if it exists (though it shouldn't if we are in catch)
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
+                activeStream = null;
+            }
+            
+            // Wait a bit before retrying to let the hardware release
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Fallback 1: Standard VGA
+            const fallbackConstraints = { 
+                video: { width: 640, height: 480, facingMode: 'environment' } 
+            };
+            console.log("Trying fallback 1:", fallbackConstraints);
+            
+            const stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+            
+            if (isMounted) {
+                activeStream = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = activeStream;
+                    await videoRef.current.play().catch(e => console.warn("Autoplay blocked", e));
+                }
+            } else {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        } catch (err2: any) {
+            console.warn("Fallback 1 failed, trying ultimate fallback...", err2);
+            
+            try {
+                if (!isMounted) return;
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Fallback 2: Any video source
+                const ultimateFallback = { video: true };
+                console.log("Trying ultimate fallback:", ultimateFallback);
+                
+                const stream = await navigator.mediaDevices.getUserMedia(ultimateFallback);
+                
+                if (isMounted) {
+                    activeStream = stream;
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = activeStream;
+                        await videoRef.current.play().catch(e => console.warn("Autoplay blocked", e));
+                    }
+                } else {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            } catch (err3: any) {
+                console.error("Critical Camera Error:", err3);
+                if (isMounted) {
+                    let msg = "No se pudo iniciar la cámara. " + (err3.message || err3.name);
+                    if (err3.name === 'NotAllowedError' || err3.name === 'PermissionDeniedError') {
+                        msg = "Permiso de cámara denegado. Por favor, habilítalo en la configuración del navegador.";
+                    } else if (err3.name === 'NotFoundError' || err3.name === 'DevicesNotFoundError') {
+                        msg = "No se encontró ninguna cámara.";
+                    } else if (err3.name === 'NotReadableError' || err3.name === 'TrackStartError') {
+                        msg = "La cámara está en uso por otra aplicación o no se puede acceder.";
+                    }
+                    setCameraError(msg);
+                }
+            }
+        }
+      }
+    }
+    
+    setupCamera();
+    
+    return () => {
+       isMounted = false;
+       if (activeStream) {
+         try {
+            activeStream.getTracks().forEach(track => track.stop());
+         } catch (e) { /* ignore */ }
+       }
+    };
+  }, [isViewer, selectedDeviceId, chromaMode]);
+
+  // Determine match state
+  const sets = match.sets || [];
+  const requiredWins = Math.ceil(match.config.maxSets / 2);
+  const winThreshold = match.config.pointsPerSet; 
+
+  const winsA = sets.filter(s => s.scoreA > s.scoreB && Math.max(s.scoreA, s.scoreB) >= (match.currentSet === match.config.maxSets ? match.config.tieBreakPoints : winThreshold)).length;
+  const winsB = sets.filter(s => s.scoreB > s.scoreA && Math.max(s.scoreA, s.scoreB) >= (match.currentSet === match.config.maxSets ? match.config.tieBreakPoints : winThreshold)).length;
+  
+  const matchEnded = winsA === requiredWins || winsB === requiredWins;
+  const winner = winsA === requiredWins ? teamA : (winsB === requiredWins ? teamB : null);
+
+  // Stats Logic
+  const calculateTeamTotal = (teamId: string, type: 'attack' | 'block' | 'ace') => {
+      let total = 0;
+      // If specific set is selected, only count that set
+      const setsToCount = (match.statsSetIndex !== undefined && match.sets[match.statsSetIndex]) 
+          ? [match.sets[match.statsSetIndex]] 
+          : sets;
+
+      setsToCount.forEach(set => {
+          total += (set.history || []).filter(h => h.teamId === teamId && h.type === type).length;
+      });
+      return total;
+  };
+  const calculateTeamErrors = (teamId: string) => {
+      let total = 0;
+      const setsToCount = (match.statsSetIndex !== undefined && match.sets[match.statsSetIndex]) 
+          ? [match.sets[match.statsSetIndex]] 
+          : sets;
+
+      setsToCount.forEach(set => {
+           total += (set.history || []).filter(h => h.teamId !== teamId && h.type === 'opponent_error').length;
+      });
+      return total;
+  };
+
+  const statsA = {
+      attacks: calculateTeamTotal(teamA.id, 'attack'),
+      blocks: calculateTeamTotal(teamA.id, 'block'),
+      aces: calculateTeamTotal(teamA.id, 'ace'),
+      errors: calculateTeamErrors(teamA.id)
+  };
+
+  const statsB = {
+      attacks: calculateTeamTotal(teamB.id, 'attack'),
+      blocks: calculateTeamTotal(teamB.id, 'block'),
+      aces: calculateTeamTotal(teamB.id, 'ace'),
+      errors: calculateTeamErrors(teamB.id)
+  };
+
+  const canUseTikTok = currentUser?.role === 'ADMIN';
+
+  // Function to toggle scoreboard safely
+  const toggleScoreboard = () => {
+      const newState = !visibleScoreboard;
+      setVisibleScoreboard(newState);
+      if (onUpdateMatch) {
+          onUpdateMatch({ showScoreboard: newState });
+      }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col justify-end pb-0 font-sans bg-transparent overflow-hidden transition-all duration-300">
+      
+      {/* Background (Chroma Key, Solid Color, or Camera) */}
+      {chromaMode !== 'none' ? (
+        <div 
+          className="absolute inset-0 w-full h-full pointer-events-none" 
+          style={{ 
+            zIndex: -1, 
+            backgroundColor: chromaMode === 'green' ? '#00FF00' : chromaMode === 'magenta' ? '#FF00FF' : '#0d1b2a' 
+          }} 
+        />
+      ) : (!isViewer && !cameraError) || (isViewer && viewerStream) ? (
+        <>
+            <video 
+                ref={videoRef}
+                autoPlay 
+                playsInline 
+                muted={!isViewer}
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{ zIndex: -1 }} 
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" style={{ zIndex: 0 }}></div>
+        </>
+      ) : (
+        <div className={`absolute inset-0 w-full h-full ${isViewer ? 'bg-transparent' : 'bg-corp-bg'}`} style={{ zIndex: -1 }}>
+            {/* Viewer Mode: Transparent background for OBS/Overlay usage */}
+            {isViewer && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    {/* Optional Placeholder */}
+                </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" style={{ zIndex: 0 }}></div>
+        </div>
+      )}
+
+      {/* --- STINGER TRANSITION OVERLAY --- */}
+      {stingerAnim !== 'idle' && (
+      <div className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-none rounded-full md:rounded-none ${isVertical ? 'rotate-90' : ''}`}>
+          <div 
+            style={{ 
+                animation: stingerAnim === 'in' 
+                    ? 'emphasisIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' 
+                    : 'emphasisOut 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' 
+            }}
+          >
+              <div className="flex flex-col items-center">
+                  {tournament?.logoUrl ? <img src={tournament.logoUrl} className="w-48 h-48 sm:w-64 sm:h-64 object-contain drop-shadow-[0_0_30px_rgba(255,255,255,0.5)]" /> : <div className="text-[10rem] sm:text-[14rem] drop-shadow-[0_0_30px_rgba(255,255,255,0.5)]">🏐</div>}
+              </div>
+          </div>
+      </div>
+      )}
+
+
+      {/* UI Toggle Button (Always visible but subtle) */}
+      {!isViewer && (
+        <div className="absolute top-4 right-4 z-[60]">
+            <button 
+                onClick={() => setShowUI(!showUI)}
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${showUI ? 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white' : 'bg-red-600 text-white animate-pulse shadow-lg'}`}
+                title={showUI ? "Ocultar Interfaz (Modo Limpio)" : "Mostrar Interfaz"}
+            >
+                {showUI ? '👁️' : '👁️‍🗨️'}
+            </button>
+        </div>
+      )}
+
+      {/* --- HEADER ELEMENTS (TOP LEFT) - NAV BAR --- */}
+      {showUI && (
+      <div className="absolute top-4 left-4 md:top-6 md:left-6 landscape:top-3 landscape:left-4 landscape:scale-90 flex flex-col gap-3 z-50 items-start transition-all">
+          
+          {/* NAVIGATION BUTTONS */}
+          <div className="flex flex-col gap-2">
+              {!isViewer && (
+                  // Admin: Back to Controls
+                  <div className="flex items-center gap-2">
+                    <button 
+                        onClick={onExit}
+                        className="bg-corp-accent hover:bg-corp-accent-hover text-white px-5 py-3 rounded-lg text-xs font-black transition backdrop-blur-md border border-white/20 uppercase tracking-widest shadow-[0_0_15px_rgba(59,130,246,0.5)] flex items-center gap-2 transform hover:scale-105 active:scale-95"
+                    >
+                        <span>🎛️</span> Volver
+                    </button>
+                  </div>
+              )}
+          </div>
+
+          {/* STATUS BADGES */}
+          {!matchEnded && (
+              <div className="hidden md:flex gap-2"> 
+                  {!isPreMatch && (
+                   <div className="bg-black/60 text-white px-3 py-1 rounded font-bold text-sm backdrop-blur-md border border-white/10 uppercase tracking-wider">
+                      SET {match.currentSet}
+                   </div>
+                  )}
+                  {!isCloudConnected && (
+                      <div className="bg-yellow-500 text-black px-3 py-1 rounded font-bold text-xs uppercase animate-bounce shadow-lg">
+                          ⚠️ Sin Conexión
+                      </div>
+                  )}
+                  {/* NEXT SET BUTTON IN OVERLAY */}
+                  {isSetFinished && isAdmin && onNextSet && (
+                      <button 
+                        onClick={onNextSet}
+                        className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded font-bold text-xs uppercase animate-pulse shadow-lg flex items-center gap-1"
+                      >
+                        ▶ Siguiente Set {nextSetCountdown ? `(${nextSetCountdown})` : ''}
+                      </button>
+                  )}
+              </div>
+          )}
+      </div>
+      )}
+      {tournament?.logoUrl && (
+          <div className={`absolute z-40 transition-all duration-500 pointer-events-none origin-top-right
+              ${isVertical 
+                  ? 'bottom-4 right-4 scale-100 origin-bottom-right rotate-90' 
+                  : 'top-6 right-4 scale-100'
+              }
+          `}>
+              <img 
+                src={tournament.logoUrl} 
+                alt="Torneo" 
+                className="h-16 w-16 md:h-24 md:w-24 object-contain drop-shadow-2xl opacity-100" 
+              />
+          </div>
+      )}
+
+      {/* TikTok & Facebook Live Buttons - Admin Only */}
+      {canUseTikTok && showUI && (
+        <div className="absolute top-36 right-6 landscape:top-24 landscape:right-4 portrait:bottom-24 portrait:right-4 portrait:top-auto flex flex-col items-center gap-4 opacity-100 z-20 transition-all">
+           {/* Scoreboard Toggle Button */}
+           <button 
+             onClick={toggleScoreboard}
+             className={`flex flex-col items-center gap-2 group hover:scale-105 transition`}
+             title={visibleScoreboard ? "Ocultar Marcador" : "Mostrar Marcador"}
+           >
+               <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition shadow-[0_0_15px_rgba(59,130,246,0.6)] ${visibleScoreboard ? 'bg-blue-600 border-blue-400' : 'bg-black/80 border-gray-500'}`}>
+                   <span className="text-2xl">🔢</span>
+               </div>
+               <span className="text-[8px] font-bold text-white bg-black/50 px-1 rounded">{visibleScoreboard ? 'Ocultar' : 'Mostrar'}</span>
+           </button>
+        </div>
+      )}
+
+      {/* --- ROTATION OVERLAY (COURT VISUALIZATION) --- */}
+      {match.showRotation && (
+          <RotationView 
+            teamA={teamA} 
+            teamB={teamB} 
+            rotationA={match.rotationA} 
+            rotationB={match.rotationB} 
+            isVertical={isVertical} 
+          />
+      )}
+
+      {/* --- CONSTRUCTION EFFECT (VNL STYLE - STATS GRID) --- */}
+      {isConstructing && (
+        <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl px-2 z-40 pointer-events-none
+            ${isVertical ? 'rotate-90 scale-[0.85] origin-center h-[50vh] w-[85vh]' : 'scale-90 md:scale-100'}
+        `}>
+             <div className="relative w-full h-[400px] flex items-center justify-center">
+                
+                {/* 1. Main Horizontal Lines (Top/Bottom) - Draw from center out */}
+                <div className="absolute top-0 left-1/2 w-full h-[2px] bg-white transform -translate-x-1/2 animate-[slideInLeft_0.4s_ease-out_forwards] origin-center scale-x-0 shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
+                <div className="absolute bottom-0 left-1/2 w-full h-[2px] bg-white transform -translate-x-1/2 animate-[slideInRight_0.4s_ease-out_forwards] origin-center scale-x-0 shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
+                
+                {/* 2. Main Vertical Lines (Left/Right) - Draw from center out */}
+                <div className="absolute left-0 top-1/2 h-full w-[2px] bg-white transform -translate-y-1/2 animate-[scaleY_0.4s_ease-out_0.2s_forwards] origin-center scale-y-0 shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
+                <div className="absolute right-0 top-1/2 h-full w-[2px] bg-white transform -translate-y-1/2 animate-[scaleY_0.4s_ease-out_0.2s_forwards] origin-center scale-y-0 shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
+
+                {/* 3. Internal Grid Lines - Creating the "Construction" feel */}
+                {/* Horizontal Dividers */}
+                <div className="absolute top-1/4 left-0 w-full h-[1px] bg-white/50 animate-[slideInLeft_0.5s_ease-out_0.3s_forwards] origin-left scale-x-0"></div>
+                <div className="absolute top-2/4 left-0 w-full h-[1px] bg-white/50 animate-[slideInRight_0.5s_ease-out_0.4s_forwards] origin-right scale-x-0"></div>
+                <div className="absolute top-3/4 left-0 w-full h-[1px] bg-white/50 animate-[slideInLeft_0.5s_ease-out_0.5s_forwards] origin-left scale-x-0"></div>
+
+                {/* Vertical Dividers */}
+                <div className="absolute top-0 left-1/4 h-full w-[1px] bg-white/50 animate-[scaleY_0.5s_ease-out_0.3s_forwards] origin-top scale-y-0"></div>
+                <div className="absolute top-0 left-2/4 h-full w-[1px] bg-white/50 animate-[scaleY_0.5s_ease-out_0.4s_forwards] origin-bottom scale-y-0"></div>
+                <div className="absolute top-0 left-3/4 h-full w-[1px] bg-white/50 animate-[scaleY_0.5s_ease-out_0.5s_forwards] origin-top scale-y-0"></div>
+
+                {/* 4. Intersection Flashes */}
+                <div className="absolute top-0 left-0 w-2 h-2 bg-white rounded-full animate-[ping_0.3s_ease-out_0.2s_forwards] opacity-0"></div>
+                <div className="absolute top-0 right-0 w-2 h-2 bg-white rounded-full animate-[ping_0.3s_ease-out_0.2s_forwards] opacity-0"></div>
+                <div className="absolute bottom-0 left-0 w-2 h-2 bg-white rounded-full animate-[ping_0.3s_ease-out_0.2s_forwards] opacity-0"></div>
+                <div className="absolute bottom-0 right-0 w-2 h-2 bg-white rounded-full animate-[ping_0.3s_ease-out_0.2s_forwards] opacity-0"></div>
+
+                {/* Central Loading Text */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-white font-mono text-xs tracking-[0.5em] animate-pulse bg-black/50 px-4 py-1 border border-white/30">LOADING STATS...</span>
+                </div>
+             </div>
+        </div>
+      )}
+
+      {/* --- COMPARATIVE STATS OVERLAY (VNL STYLE) --- */}
+      {visibleStats && !matchEnded && !match.showRotation && (
+        <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl px-2 z-40 transition-transform 
+            ${isVertical ? 'rotate-90 scale-[0.85] origin-center h-[50vh] w-[85vh] flex items-center justify-center' : 'scale-90 md:scale-100'}
+        `}>
+            <div className="relative w-full max-w-3xl mx-auto">
+                
+                {/* Floating Logo Box - Positioned absolutely to the left of the stats table */}
+                <div className="absolute -left-24 top-14 z-30 shadow-2xl hidden md:block">
+                    <div className="bg-[#1e3a8a] w-28 h-28 flex items-center justify-center border-4 border-white">
+                         {tournament?.logoUrl ? (
+                             <img src={tournament.logoUrl} className="w-24 h-24 object-contain" />
+                         ) : (
+                             <div className="text-white font-black text-center leading-none">
+                                 <div className="text-4xl italic">VNL</div>
+                                 <div className="text-[9px] tracking-widest uppercase mt-1">Volleyball<br/>Nations League</div>
+                             </div>
+                         )}
+                    </div>
+                </div>
+                {/* Mobile Logo - Visible only on small screens, positioned differently or hidden to save space */}
+                <div className="absolute -left-4 top-14 z-30 shadow-2xl md:hidden scale-75 origin-right">
+                     <div className="bg-[#1e3a8a] w-20 h-20 flex items-center justify-center border-2 border-white">
+                         {tournament?.logoUrl ? (
+                             <img src={tournament.logoUrl} className="w-16 h-16 object-contain" />
+                         ) : (
+                             <div className="text-white font-black text-center leading-none">
+                                 <div className="text-2xl italic">VNL</div>
+                             </div>
+                         )}
+                    </div>
+                </div>
+
+                {/* Main Content Column */}
+                <div className="flex flex-col w-full">
+                    
+                    {/* Top Labels Row */}
+                    <div className="flex items-end pl-0 md:pl-0 relative z-20">
+                        {/* Set Label */}
+                        <div className="bg-[#ef4444] text-white h-14 px-8 flex items-center justify-center border-4 border-white border-b-0 shadow-md ml-16 md:ml-0">
+                            <span className="font-black italic text-3xl uppercase tracking-tighter drop-shadow-md">
+                                SET {match.currentSet}
+                            </span>
+                        </div>
+
+                        {/* Team Stats Label */}
+                        <div className="bg-white text-[#1e3a8a] h-10 px-6 flex items-center justify-center border-t-4 border-r-4 border-white shadow-sm mb-0">
+                            <span className="font-black italic text-sm uppercase tracking-widest">
+                                TEAM STATS
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Main Stats Container */}
+                    <div className="bg-white border-4 border-white shadow-2xl relative z-10">
+                        
+                        {/* Team Header Row */}
+                        <div className="flex h-16 relative border-b-2 border-white">
+                            {/* Team A Name Bar */}
+                            <div className="flex-1 bg-[#1e3a8a] flex items-center justify-center relative overflow-hidden">
+                                <div className="absolute left-0 top-0 bottom-0 w-3 bg-[#facc15]"></div> {/* Yellow Accent */}
+                                <span className="text-white font-black italic text-3xl uppercase tracking-tighter z-10 drop-shadow-md">{teamA.name}</span>
+                            </div>
+
+                            {/* Scores Center */}
+                            <div className="w-40 flex relative z-20">
+                                <div className="flex-1 bg-[#ef4444] flex items-center justify-center border-r-2 border-white">
+                                    <span className="text-white font-black text-4xl">{match.scoreA}</span>
+                                </div>
+                                <div className="flex-1 bg-[#ef4444] flex items-center justify-center">
+                                    <span className="text-white font-black text-4xl">{match.scoreB}</span>
+                                </div>
+                            </div>
+
+                            {/* Team B Name Bar */}
+                            <div className="flex-1 bg-[#1e3a8a] flex items-center justify-center relative overflow-hidden">
+                                <div className="absolute right-0 top-0 bottom-0 w-3 bg-[#ef4444]"></div> {/* Red Accent */}
+                                <span className="text-white font-black italic text-3xl uppercase tracking-tighter z-10 drop-shadow-md">{teamB.name}</span>
+                            </div>
+                        </div>
+
+                        {/* Stats Rows */}
+                        <div className="flex flex-col">
+                            {[
+                                { l: sets.filter(s => s.scoreA > s.scoreB).length, label: 'SETS', r: sets.filter(s => s.scoreB > s.scoreA).length },
+                                { l: statsA.attacks, label: 'ATTACKS', r: statsB.attacks },
+                                { l: statsA.blocks, label: 'BLOCKS', r: statsB.blocks },
+                                { l: statsA.aces, label: 'SERVES', r: statsB.aces },
+                                { l: statsA.errors, label: 'OPPONENT ERRORS', r: statsB.errors }
+                            ].map((row, idx) => (
+                                <div key={idx} className={`flex h-12 items-center border-b border-white/10 ${idx % 2 === 0 ? 'bg-[#dc2626]' : 'bg-[#1e3a8a]'}`}>
+                                    {/* Team A Value */}
+                                    <div className="flex-1 text-center">
+                                        <span className="text-white font-black text-2xl drop-shadow-sm">{row.l}</span>
+                                    </div>
+
+                                    {/* Label */}
+                                    <div className="w-56 text-center">
+                                        <span className="text-white font-bold text-base uppercase tracking-widest opacity-100 drop-shadow-md">{row.label}</span>
+                                    </div>
+
+                                    {/* Team B Value */}
+                                    <div className="flex-1 text-center">
+                                        <span className="text-white font-black text-2xl drop-shadow-sm">{row.r}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* --- PRE-MATCH / WARMUP BANNER & TEAM VS (COMPACT MODE) --- */}
+      {(isPreMatch || isSetFinished) && !matchEnded && (
+          <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 w-[90%] max-w-4xl z-30 animate-in slide-in-from-bottom-10 duration-700">
+             {/* Compact Pre-Match Bar - Allows full camera visibility */}
+            <div className="bg-black/70 backdrop-blur-md border border-white/20 rounded-2xl overflow-hidden shadow-2xl flex items-stretch h-20 md:h-24">
+                
+                {/* Team A */}
+                <div className="flex-1 flex items-center justify-end px-4 md:px-6 gap-3 md:gap-4 bg-gradient-to-r from-transparent to-blue-900/30">
+                    <h3 className="hidden md:block text-xl md:text-2xl font-black text-white uppercase italic tracking-tighter text-right leading-none">{teamA.name}</h3>
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-white/10 rounded-lg p-1 md:p-2 border border-white/10 shadow-lg">
+                        {teamA.logoUrl ? (
+                            <img src={teamA.logoUrl} className="w-full h-full object-contain" /> 
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xl font-black text-blue-400">{teamA.name[0]}</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Center VS / Status */}
+                <div className="w-32 md:w-40 flex flex-col items-center justify-center bg-black/50 border-x border-white/10 relative">
+                     <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 to-transparent animate-pulse"></div>
+                     <span className="text-2xl md:text-4xl font-black text-yellow-400 italic drop-shadow-lg">VS</span>
+                     <span className="text-[9px] md:text-[10px] font-bold text-white uppercase tracking-widest bg-red-600/80 px-2 py-0.5 rounded mt-1">
+                        {isSetFinished ? 'INTERMEDIO' : 'Calentamiento'}
+                     </span>
+                </div>
+
+                {/* Team B */}
+                <div className="flex-1 flex items-center justify-start px-4 md:px-6 gap-3 md:gap-4 bg-gradient-to-l from-transparent to-red-900/30">
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-white/10 rounded-lg p-1 md:p-2 border border-white/10 shadow-lg">
+                        {teamB.logoUrl ? (
+                            <img src={teamB.logoUrl} className="w-full h-full object-contain" /> 
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xl font-black text-red-400">{teamB.name[0]}</div>
+                        )}
+                    </div>
+                    <h3 className="hidden md:block text-xl md:text-2xl font-black text-white uppercase italic tracking-tighter text-left leading-none">{teamB.name}</h3>
+                </div>
+
+            </div>
+          </div>
+      )}
+
+      {/* HAWK EYE EFFECT */}
+      {hawkEyeVisible && (
+          <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-500">
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
+              <div className="w-[80vw] h-[60vh] border-2 border-orange-500/50 shadow-[0_0_50px_rgba(249,115,22,0.3)] relative overflow-hidden flex flex-col items-center justify-center">
+                  <div className="absolute top-0 left-0 w-full h-[5px] bg-orange-500 shadow-[0_0_20px_#f97316] animate-[scan_2s_linear_infinite]"></div>
+                  <h2 className="text-4xl md:text-6xl font-black text-white italic tracking-widest drop-shadow-[0_0_10px_black] bg-black/50 px-8 py-2 border border-orange-500/50">CHALLENGE</h2>
+                  <p className="text-orange-400 font-mono mt-4 animate-pulse">ANALIZANDO TRAYECTORIA...</p>
+              </div>
+          </div>
+      )}
+
+
+
+      {/* --- FORMATIONS OVERLAY --- */}
+      {match.tvSettings?.showFormations && (
+          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in zoom-in duration-500">
+             <div className={`relative flex font-sans ${isVertical ? 'flex-col gap-4' : 'flex-row gap-12'}`}>
+                {/* Team A Formation */}
+                <div className="relative w-[30vh] h-[30vh] md:w-[45vh] md:h-[45vh]">
+                   <div className="absolute -top-12 left-0 right-0 text-center font-black text-white uppercase tracking-widest text-lg md:text-2xl drop-shadow-[0_0_5px_rgba(130,125,255,1)]">{teamA.name}</div>
+                   <div className="w-full h-full bg-orange-500/10 border-4 border-white/40 shadow-2xl skew-x-[-10deg] md:skew-x-[-15deg] grid grid-cols-3 grid-rows-2 p-2 gap-2 relative">
+                       {/* Attack Line */}
+                       <div className="absolute top-1/3 left-0 right-0 h-1 bg-white/20"></div>
+                       {[4,3,2,5,6,1].map((pos, i) => {
+                          const player = match.rotationA[pos-1];
+                          return (
+                             <div key={pos} className="flex items-center justify-center relative">
+                                {player ? (
+                                   <div className="flex flex-col items-center animate-in zoom-in" style={{animationDelay: `${i*100}ms`}}>
+                                      {player.profile?.photoUrl ? (
+                                         <img src={player.profile.photoUrl} className="w-10 h-10 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#827DFF] shadow-[0_0_10px_#827DFF]" />
+                                      ) : (
+                                         <div className="w-10 h-10 md:w-16 md:h-16 rounded-full bg-slate-800 border-2 border-[#827DFF] flex items-center justify-center text-white font-black text-lg shadow-[0_0_10px_#827DFF]">{player.number}</div>
+                                      )}
+                                      <span className="text-[8px] md:text-xs text-white font-bold bg-black/60 px-1 rounded mt-1 truncate max-w-[60px]">{player.name.split(' ')[0]}</span>
+                                   </div>
+                                ) : <div className="text-white/20 text-[8px] font-bold">POS {pos}</div>}
+                             </div>
+                          );
+                       })}
+                   </div>
+                </div>
+                
+                {/* VS Center */}
+                {!isVertical && (
+                   <div className="flex flex-col justify-center items-center">
+                     <div className="text-3xl text-white/50 font-black italic border-y-2 border-white/20 py-2">VS</div>
+                   </div>
+                )}
+
+                {/* Team B Formation */}
+                <div className="relative w-[30vh] h-[30vh] md:w-[45vh] md:h-[45vh]">
+                   <div className={`absolute ${isVertical?'-top-12':'top-[105%]'} left-0 right-0 text-center font-black text-white uppercase tracking-widest text-lg md:text-2xl drop-shadow-[0_0_5px_rgba(76,139,255,1)]`}>{teamB.name}</div>
+                   <div className="w-full h-full bg-orange-500/10 border-4 border-white/40 shadow-2xl skew-x-[-10deg] md:skew-x-[-15deg] grid grid-cols-3 grid-rows-2 p-2 gap-2 relative">
+                       {/* Attack Line */}
+                       <div className="absolute bottom-1/3 left-0 right-0 h-1 bg-white/20"></div>
+                       {/* Note: reversed side for Team B so the net is in the middle logically if placed side by side */}
+                       {[2,3,4,1,6,5].map((pos, i) => {
+                          const player = match.rotationB[pos-1];
+                          return (
+                             <div key={pos} className="flex items-center justify-center relative">
+                                {player ? (
+                                   <div className="flex flex-col items-center animate-in zoom-in" style={{animationDelay: `${i*100}ms`}}>
+                                      {player.profile?.photoUrl ? (
+                                         <img src={player.profile.photoUrl} className="w-10 h-10 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#4C8BFF] shadow-[0_0_10px_#4C8BFF]" />
+                                      ) : (
+                                         <div className="w-10 h-10 md:w-16 md:h-16 rounded-full bg-slate-800 border-2 border-[#4C8BFF] flex items-center justify-center text-white font-black text-lg shadow-[0_0_10px_#4C8BFF]">{player.number}</div>
+                                      )}
+                                      <span className="text-[8px] md:text-xs text-white font-bold bg-black/60 px-1 rounded mt-1 truncate max-w-[60px]">{player.name.split(' ')[0]}</span>
+                                   </div>
+                                ) : <div className="text-white/20 text-[8px] font-bold">POS {pos}</div>}
+                             </div>
+                          );
+                       })}
+                   </div>
+                </div>
+             </div>
+          </div>
+      )}
+
+      {/* --- EXTENDED SET STATISTICS OVERLAY --- */}
+      {match.tvSettings?.showSetStatsExt && (
+          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
+             <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
+                 <div className="flex flex-col pt-6 pb-2 relative">
+                     <div className="absolute top-2 left-4 text-[#827DFF] font-black italic text-xl opacity-50 tracking-tighter">VOLLEYTV</div>
+                     <div className="text-center w-full text-white/70 font-black tracking-[0.3em] text-sm mb-4">SET STATISTICS</div>
+                     {/* Teams and Score Header */}
+                     <div className="flex items-center justify-between px-16 mb-8">
+                         <div className="flex items-center gap-6">
+                            <div className="w-16 h-10 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center">
+                                {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black">{teamA.name.substring(0,3).toUpperCase()}</div>}
+                            </div>
+                            <span className="text-6xl font-black text-white italic tracking-tighter drop-shadow-lg">{teamA.name.substring(0,3).toUpperCase()}</span>
+                         </div>
+                         <div className="text-5xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">
+                             {match.sets.filter(s=>s.scoreA > s.scoreB).length} - {match.sets.filter(s=>s.scoreB > s.scoreA).length}
+                         </div>
+                         <div className="flex items-center gap-6 text-right flex-row-reverse">
+                            <div className="w-16 h-10 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center">
+                                {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black">{teamB.name.substring(0,3).toUpperCase()}</div>}
+                            </div>
+                            <span className="text-6xl font-black text-white italic tracking-tighter drop-shadow-lg">{teamB.name.substring(0,3).toUpperCase()}</span>
+                         </div>
+                     </div>
+                     {/* Stats Rows */}
+                     <div className="flex flex-col gap-1.5 px-4 pb-6">
+                         {/* SET HEADER */}
+                         <div className="flex justify-between items-center text-xs font-black text-white/50 px-[20%] mb-1">
+                             <span>SET {match.currentSet}</span>
+                             <span>SET {match.currentSet}</span>
+                         </div>
+                         {(() => {
+                             // Calculation of current set stats
+                             const currSet = match.sets[match.currentSet - 1] || { history: [] };
+                             const actsA = currSet.history.filter(h=>h.teamId===teamA.id);
+                             const actsB = currSet.history.filter(h=>h.teamId===teamB.id);
+
+                             const ptsA = match.scoreA;
+                             const ptsB = match.scoreB;
+                             
+                             const attA = actsA.filter(h=>h.type==='attack').length;
+                             const attB = actsB.filter(h=>h.type==='attack').length;
+
+                             const blkA = actsA.filter(h=>h.type==='block').length;
+                             const blkB = actsB.filter(h=>h.type==='block').length;
+
+                             const srvA = actsA.filter(h=>h.type==='ace').length;
+                             const srvB = actsB.filter(h=>h.type==='ace').length;
+
+                             const errOPA = actsB.filter(h=>h.type==='opponent_error').length; // points for A due to B's error
+                             const errOPB = actsA.filter(h=>h.type==='opponent_error').length; // points for B due to A's error
+
+                             const rows = [
+                                 { label: 'POINTS', l: ptsA, r: ptsB, max: Math.max(ptsA, ptsB) || 25 },
+                                 { label: 'ATTACKS', l: attA, r: attB, max: Math.max(attA, attB) || 15 },
+                                 { label: 'BLOCKS', l: blkA, r: blkB, max: Math.max(blkA, blkB) || 5 },
+                                 { label: 'SERVES', l: srvA, r: srvB, max: Math.max(srvA, srvB) || 5 },
+                                 { label: 'OPPONENT ERRORS', l: errOPA, r: errOPB, max: Math.max(errOPA, errOPB) || 10 },
+                             ];
+
+                             return rows.map((r, idx) => (
+                                 <div key={idx} className="flex justify-center items-center w-full">
+                                     <div className="flex-1 flex justify-end items-center px-4 relative h-8">
+                                         <div className="absolute top-1/2 -translate-y-1/2 right-0 h-4 bg-gradient-to-r from-transparent to-blue-600 z-0" style={{ width: `${(r.l / Math.max(1, r.max)) * 100}%`}}></div>
+                                         <span className="relative z-10 text-white font-black text-lg bg-[#302766] px-3 py-0.5 rounded shadow-lg">{r.l}</span>
+                                     </div>
+                                     <div className="w-1/4 text-center text-white/80 font-black tracking-widest text-sm bg-black/20 py-1">
+                                         {r.label}
+                                     </div>
+                                     <div className="flex-1 flex justify-start items-center px-4 relative h-8">
+                                         <div className="absolute top-1/2 -translate-y-1/2 left-0 h-4 bg-gradient-to-l from-transparent to-red-600 z-0" style={{ width: `${(r.r / Math.max(1, r.max)) * 100}%`}}></div>
+                                         <span className="relative z-10 text-white font-black text-lg bg-[#66273c] px-3 py-0.5 rounded shadow-lg">{r.r}</span>
+                                     </div>
+                                 </div>
+                             ));
+                         })()}
+                     </div>
+                 </div>
+             </div>
+          </div>
+      )}
+
+      {/* --- EXTENDED TOP PLAYERS OVERLAY --- */}
+      {match.tvSettings?.showTopPlayersExt && (
+          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in slide-in-from-bottom duration-500">
+             <div className="relative flex flex-col items-center w-full max-w-5xl">
+                 {/* HEADING GROUP */}
+                 <div className="flex flex-col items-center mb-6 drop-shadow-xl">
+                     <h2 className="text-7xl font-black text-white italic tracking-tighter uppercase">TOP PLAYERS</h2>
+                     <span className="text-white font-bold tracking-[0.3em] text-sm mt-1">SET {match.currentSet}</span>
+                 </div>
+                 {/* PLAYERS CARD */}
+                 {(()=>{
+                     // Get best players from current set
+                     const currSet = match.sets[match.currentSet - 1] || { history: [] };
+                     const scoresA:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
+                     const scoresB:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
+                     
+                     // Helper
+                     teamA.players.forEach(p => scoresA[p.id] = {pts:0, att:0, blk:0, srv:0, attTot:0 });
+                     teamB.players.forEach(p => scoresB[p.id] = {pts:0, att:0, blk:0, srv:0, attTot:0 });
+
+                     currSet.history.forEach(h => {
+                         if(h.playerId) {
+                             let sc = h.teamId === teamA.id ? scoresA[h.playerId] : scoresB[h.playerId];
+                             if(sc) {
+                                 if(['attack','block','ace'].includes(h.type)) sc.pts++;
+                                 if(h.type==='attack') { sc.att++; sc.attTot++; }
+                                 // Opponent errors aren't directly linked to a specific player's attack error in this lightweight data model.
+                                 // We'll just use successful attacks for efficiency for now.
+                                 if(h.type==='block') sc.blk++;
+                                 if(h.type==='ace') sc.srv++;
+                             }
+                         }
+                     });
+
+                     let bestAId = teamA.players[0]?.id; let maxA = -1;
+                     Object.entries(scoresA).forEach(([id, st]) => { if(st.pts > maxA) { maxA=st.pts; bestAId=id; }});
+                     let bestBId = teamB.players[0]?.id; let maxB = -1;
+                     Object.entries(scoresB).forEach(([id, st]) => { if(st.pts > maxB) { maxB=st.pts; bestBId=id; }});
+
+                     const pA = teamA.players.find(p=>p.id===bestAId);
+                     const pB = teamB.players.find(p=>p.id===bestBId);
+                     const stA = scoresA[bestAId] || {pts:0,att:0,blk:0,srv:0,attTot:1};
+                     const stB = scoresB[bestBId] || {pts:0,att:0,blk:0,srv:0,attTot:1};
+
+                     if(!pA || !pB) return null;
+
+                     const effA = stA.attTot > 0 ? Math.round((stA.att/stA.attTot)*100) : 0;
+                     const effB = stB.attTot > 0 ? Math.round((stB.att/stB.attTot)*100) : 0;
+
+                     const rows = [
+                         { label: 'ROLE', l: pA.role, r: pB.role },
+                         { label: 'AGE', l: pA.profile?.birthDate ? (new Date().getFullYear() - new Date(pA.profile.birthDate).getFullYear()) : '-', r: pB.profile?.birthDate ? (new Date().getFullYear() - new Date(pB.profile.birthDate).getFullYear()) : '-' },
+                         { label: 'HEIGHT', l: pA.profile?.height ? pA.profile.height+' cm' : '-', r: pB.profile?.height ? pB.profile.height+' cm' : '-' },
+                         { label: 'TOTAL POINTS', l: stA.pts, r: stB.pts },
+                         { label: 'EFFICIENCY', l: effA+'%', r: effB+'%' },
+                         { label: 'ATTACKS IN', l: stA.att, r: stB.att },
+                         { label: 'BLOCKS', l: stA.blk, r: stB.blk },
+                         { label: 'SERVES', l: stA.srv, r: stB.srv },
+                     ];
+
+                     return (
+                     <div className="flex w-full items-end justify-center h-[50vh]">
+                         {/* LEFT PLAYER */}
+                         <div className="w-[30%] h-[120%] relative flex justify-center">
+                             {pA.profile?.photoUrl ? (
+                                <img src={pA.profile.photoUrl} className="absolute bottom-0 h-full object-contain mb-8 z-20 drop-shadow-2xl translate-x-12"/>
+                             ) : (
+                                <div className="absolute bottom-0 h-[80%] aspect-square bg-blue-900 rounded-full mb-8 z-20 shadow-2xl flex items-center justify-center text-7xl font-black text-white">{pA.number}</div>
+                             )}
+                             <div className="absolute bottom-0 text-white font-black italic text-4xl bg-[#4C8BFF] px-6 py-2 rounded-t z-30 shadow-2xl flex items-center gap-2 pr-12 translate-x-4">
+                                <span>{pA.role} {pA.number}</span>
+                                <div className="text-3xl ml-2 drop-shadow-md">{pA.name.split(' ')[0]}</div>
+                             </div>
+                         </div>
+                         {/* STATS BOARD */}
+                         <div className="w-[50%] bg-gradient-to-br from-[#1b143c] to-[#0e0c1f] rounded-t-xl overflow-hidden shadow-[0_-10px_40px_rgba(0,0,0,0.8)] border border-white/10 z-10 relative flex flex-col">
+                             {/* FLAGS HEADER */}
+                             <div className="flex justify-between items-center py-2 px-8 bg-black/40">
+                                 <div className="w-12 h-6 border bg-white flex items-center justify-center overflow-hidden">
+                                     {teamA.logoUrl ? <img src={teamA.logoUrl} className="object-cover h-full w-full"/> : teamA.name.substring(0,3)}
+                                 </div>
+                                 <div className="w-12 h-6 border bg-white flex items-center justify-center overflow-hidden">
+                                     {teamB.logoUrl ? <img src={teamB.logoUrl} className="object-cover h-full w-full"/> : teamB.name.substring(0,3)}
+                                 </div>
+                             </div>
+                             {/* ROWS */}
+                             <div className="flex flex-col py-4 gap-1">
+                                 {rows.map((r, i) => (
+                                     <div key={i} className="flex font-black text-lg h-9">
+                                         <div className="flex-1 bg-gradient-to-r from-[#170a4a] to-[#251bc2] flex items-center justify-start px-6 text-white drop-shadow-md">
+                                             {r.l}
+                                         </div>
+                                         <div className="w-1/3 bg-[#3f3178]/20 flex items-center justify-center text-[#c2bdf0] tracking-widest text-sm font-bold">
+                                             {r.label}
+                                         </div>
+                                         <div className="flex-1 bg-gradient-to-l from-[#4a0a1a] to-[#c21b44] flex items-center justify-end px-6 text-white drop-shadow-md">
+                                             {r.r}
+                                         </div>
+                                     </div>
+                                 ))}
+                             </div>
+                         </div>
+                         {/* RIGHT PLAYER */}
+                         <div className="w-[30%] h-[120%] relative flex justify-center">
+                             {pB.profile?.photoUrl ? (
+                                <img src={pB.profile.photoUrl} className="absolute bottom-0 h-[105%] object-contain mb-8 z-20 drop-shadow-2xl -translate-x-12 transform scale-x-[-1]"/>
+                             ) : (
+                                <div className="absolute bottom-0 h-[80%] aspect-square bg-red-900 rounded-full mb-8 z-20 shadow-2xl flex items-center justify-center text-7xl font-black text-white -translate-x-4">{pB.number}</div>
+                             )}
+                             <div className="absolute bottom-0 text-[#140b2b] font-black italic text-4xl bg-yellow-400 px-6 py-2 rounded-t z-30 shadow-2xl flex items-center gap-2 pl-12 -translate-x-4">
+                                <div className="text-3xl mr-2 drop-shadow-md">{pB.name.split(' ')[0]}</div>
+                                <span>{pB.role} {pB.number}</span>
+                             </div>
+                         </div>
+                     </div>
+                     );
+                 })()}
+             </div>
+          </div>
+      )}
+
+      {/* --- MATCH FINISHED SUMMARY --- */}
+      {matchEnded && winner ? (
+          <div className="relative z-10 w-full max-w-4xl mx-auto mb-10 animate-in slide-in-from-bottom-10 fade-in duration-700 mt-20 md:mt-0">
+             <div className="bg-gradient-to-b from-slate-900/95 to-blue-950/95 text-white rounded-xl overflow-hidden shadow-2xl border border-white/20 backdrop-blur-xl m-4">
+                 <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-4 text-center border-b border-white/10">
+                     <h2 className="text-2xl font-black uppercase tracking-widest italic">Resultado Final</h2>
+                 </div>
+                 
+                 <div className="p-8 flex flex-col items-center">
+                     <div className="text-sm font-bold text-blue-200 uppercase tracking-widest mb-4">Ganador del Partido</div>
+                     <div className="flex items-center gap-6 mb-8 transform scale-125">
+                         {winner.logoUrl && <img src={winner.logoUrl} className="w-20 h-20 object-contain bg-white rounded-full p-2 shadow-lg" alt="" />}
+                         <div className="text-5xl font-black text-white italic drop-shadow-lg uppercase">{winner.name}</div>
+                     </div>
+                     
+                     <div className="flex gap-2 mb-8">
+                         {sets.map((s, i) => (
+                             (s.scoreA > 0 || s.scoreB > 0) && (
+                                 <div key={i} className="flex flex-col items-center bg-black/40 px-4 py-2 rounded border border-white/10">
+                                     <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Set {i+1}</div>
+                                     <div className={`text-xl font-mono font-bold ${matchEnded ? (winner.id === teamA.id ? (s.scoreA > s.scoreB ? 'text-yellow-400' : 'text-white') : (s.scoreB > s.scoreA ? 'text-yellow-400' : 'text-white')) : 'text-white'}`}>
+                                         {s.scoreA}-{s.scoreB}
+                                     </div>
+                                 </div>
+                             )
+                         ))}
+                     </div>
+                 </div>
+             </div>
+          </div>
+      ) : (
+          /* --- SCOREBOARD (RESPONSIVE VERTICAL/HORIZONTAL) --- */
+          renderScoreboard && !isPreMatch && !match.showRotation && (
+            <div className={`relative z-10 transition-all duration-300
+                ${isVertical 
+                    ? 'absolute top-0 left-0 h-full w-32 md:w-40 flex items-center justify-center pointer-events-none' 
+                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-[60%] md:w-[70%] max-w-4xl pointer-events-none scale-90 md:scale-100 flex justify-center origin-bottom'
+                }
+            `}
+            style={(boardAnim === 'in' || boardAnim === 'out') ? {
+                animation: boardAnim === 'in' 
+                    ? 'drawBoardIn 0.8s cubic-bezier(0.8, 0, 0.2, 1) forwards' 
+                    : 'drawBoardOut 0.8s cubic-bezier(0.8, 0, 0.2, 1) forwards'
+            } : {}}
+            >
+                
+                <div className={`bg-transparent rounded-none overflow-visible flex flex-col items-center pointer-events-auto shrink-0 relative
+                    ${isVertical 
+                        ? 'rotate-90 origin-center w-[50vh] max-w-none h-10 md:h-14 shadow-[0_15px_30px_rgba(0,0,0,0.8)]' 
+                        : 'w-[90%] max-w-3xl h-10 md:h-14 shadow-[0_15px_30px_rgba(0,0,0,0.8)]'
+                    }
+                `}>
+                    {/* Top Tab for Tournament Name */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 bg-[#0f172a] rounded-t-xl px-4 md:px-8 py-1 md:py-2 flex items-center gap-2 text-white font-black text-[10px] md:text-sm tracking-[0.2em] shadow-lg">
+                       <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                       {tournament?.name || "LIGA EXCLUSIVA"}
+                    </div>
+                    
+                    {/* Set Point / Match Point Banner */}
+                    {pointBanner && (
+                        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 px-6 py-1 rounded-b-lg font-black text-white text-[10px] md:text-sm tracking-widest animate-in fade-in slide-in-from-top-2 flex gap-2 items-center" style={{ backgroundColor: pointBanner.color }}>
+                            <span className="relative z-10">{pointBanner.text}</span>
+                        </div>
+                    )}
+
+                    {/* Left Attachment (Team A Stats) */}
+                    {(match.tvSettings?.showTeamStats || match.tvSettings?.showPlayerStats) && !isVertical && (
+                        <div className="absolute top-1/2 -translate-y-1/2 right-[100%] pr-2 h-[80%] flex animate-in slide-in-from-right fade-in pointer-events-none">
+                             <div className="h-full bg-gradient-to-r from-transparent to-[#181d2e] rounded-l-full border-y border-l border-white/10 shadow-2xl flex items-center pr-4 pl-8 gap-3">
+                                  <div className="flex flex-col items-end">
+                                      <span className="text-[7px] md:text-[9px] font-black text-white/50 uppercase tracking-[0.2em] leading-none">
+                                          {match.tvSettings?.showTeamStats ? 'Ataque Efectividad' : 'Top Anotador'}
+                                      </span>
+                                      <span className="text-[10px] md:text-sm font-black text-[#827DFF] uppercase tracking-widest leading-none mt-1">
+                                          {match.tvSettings?.showTeamStats ? 'Equipo A' : (()=>{
+                                              let bestPlayer = 'NINGUNO'; let maxPts = 0;
+                                              const scores: Record<string, number> = {};
+                                              match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
+                                                  if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
+                                              });
+                                              Object.entries(scores).forEach(([pId, pts]) => {
+                                                  if(pts > maxPts) { maxPts=pts; bestPlayer=teamA.players.find(p=>p.id===pId)?.name.split(' ')[0]||'Jugador'; }
+                                              });
+                                              return maxPts > 0 ? bestPlayer : 'N/A';
+                                          })()}
+                                      </span>
+                                  </div>
+                                  <div className="relative w-8 h-8 md:w-12 md:h-12 flex items-center justify-center">
+                                       <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                          <path stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" strokeDasharray="50, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                          <path stroke="#827DFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(()=>{
+                                              if(match.tvSettings?.showPlayerStats) {
+                                                  // Points meter (relative to 10 points)
+                                                  let maxPts = 0;
+                                                  const scores: Record<string, number> = {};
+                                                  match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
+                                                      if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
+                                                  });
+                                                  Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
+                                                  return Math.min(50, (maxPts/10)*50);
+                                              } else {
+                                                  const acts = match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && h.type==='attack');
+                                                  const succ = acts.length; 
+                                                  const err = match.sets.flatMap(s=>s.history).filter(h=>h.teamId!==teamA.id && h.type==='opponent_error').length;
+                                                  const tot = succ + err;
+                                                  return tot > 0 ? (succ/tot)*50 : 0;
+                                              }
+                                          })()}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" className="transition-all duration-1000 ease-out"/>
+                                       </svg>
+                                       <span className="text-white font-black text-[10px] md:text-sm">{(()=>{
+                                            if(match.tvSettings?.showPlayerStats) {
+                                                let maxPts = 0;
+                                                const scores: Record<string, number> = {};
+                                                match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
+                                                    if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
+                                                });
+                                                Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
+                                                return maxPts + (maxPts===1?'pt':'pts');
+                                            } else {
+                                                const acts = match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && h.type==='attack');
+                                                const succ = acts.length; 
+                                                const err = match.sets.flatMap(s=>s.history).filter(h=>h.teamId!==teamA.id && h.type==='opponent_error').length;
+                                                const tot = succ + err;
+                                                return tot > 0 ? Math.round((succ/tot)*100)+'%' : '0%';
+                                            }
+                                       })()}</span>
+                                  </div>
+                             </div>
+                        </div>
+                    )}
+
+                    {/* Right Attachment (Team B Stats) */}
+                    {(match.tvSettings?.showTeamStats || match.tvSettings?.showPlayerStats) && !isVertical && (
+                        <div className="absolute top-1/2 -translate-y-1/2 left-[100%] pl-2 h-[80%] flex animate-in slide-in-from-left fade-in pointer-events-none">
+                             <div className="h-full bg-gradient-to-l from-transparent to-[#181d2e] rounded-r-full border-y border-r border-white/10 shadow-2xl flex items-center pl-4 pr-8 gap-3">
+                                  <div className="relative w-8 h-8 md:w-12 md:h-12 flex items-center justify-center">
+                                       <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                          <path stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" strokeDasharray="50, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                          <path stroke="#4C8BFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(()=>{
+                                              if(match.tvSettings?.showPlayerStats) {
+                                                  // Points meter (relative to 10 points)
+                                                  let maxPts = 0;
+                                                  const scores: Record<string, number> = {};
+                                                  match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
+                                                      if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
+                                                  });
+                                                  Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
+                                                  return Math.min(50, (maxPts/10)*50);
+                                              } else {
+                                                  const acts = match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && h.type==='attack');
+                                                  const succ = acts.length; 
+                                                  const err = match.sets.flatMap(s=>s.history).filter(h=>h.teamId!==teamB.id && h.type==='opponent_error').length;
+                                                  const tot = succ + err;
+                                                  return tot > 0 ? (succ/tot)*50 : 0;
+                                              }
+                                          })()}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" className="transition-all duration-1000 ease-out"/>
+                                       </svg>
+                                       <span className="text-white font-black text-[10px] md:text-sm">{(()=>{
+                                            if(match.tvSettings?.showPlayerStats) {
+                                                let maxPts = 0;
+                                                const scores: Record<string, number> = {};
+                                                match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
+                                                    if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
+                                                });
+                                                Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
+                                                return maxPts + (maxPts===1?'pt':'pts');
+                                            } else {
+                                                const acts = match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && h.type==='attack');
+                                                const succ = acts.length; 
+                                                const err = match.sets.flatMap(s=>s.history).filter(h=>h.teamId!==teamB.id && h.type==='opponent_error').length;
+                                                const tot = succ + err;
+                                                return tot > 0 ? Math.round((succ/tot)*100)+'%' : '0%';
+                                            }
+                                       })()}</span>
+                                  </div>
+                                  <div className="flex flex-col items-start">
+                                      <span className="text-[7px] md:text-[9px] font-black text-white/50 uppercase tracking-[0.2em] leading-none">
+                                          {match.tvSettings?.showTeamStats ? 'Ataque Efectividad' : 'Top Anotador'}
+                                      </span>
+                                      <span className="text-[10px] md:text-sm font-black text-[#4C8BFF] uppercase tracking-widest leading-none mt-1">
+                                          {match.tvSettings?.showTeamStats ? 'Equipo B' : (()=>{
+                                              let bestPlayer = 'NINGUNO'; let maxPts = 0;
+                                              const scores: Record<string, number> = {};
+                                              match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
+                                                  if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
+                                              });
+                                              Object.entries(scores).forEach(([pId, pts]) => {
+                                                  if(pts > maxPts) { maxPts=pts; bestPlayer=teamB.players.find(p=>p.id===pId)?.name.split(' ')[0]||'Jugador'; }
+                                              });
+                                              return maxPts > 0 ? bestPlayer : 'N/A';
+                                          })()}
+                                      </span>
+                                  </div>
+                             </div>
+                        </div>
+                    )}
+
+                    <div className="w-full h-full flex rounded shadow-2xl overflow-hidden font-sans">
+                        
+                        {/* Team A Section */}
+                        <div className="flex-1 flex items-center justify-between pl-2 md:pl-4 pr-0 bg-[#252a3b] border-l-4 border-[#827DFF]">
+                            <div className="flex flex-row items-center flex-1">
+                                {/* Logo */}
+                                <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-8 h-8 md:w-12 md:h-12 mr-2">
+                                    {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{teamA.name[0]}</div>}
+                                    {match.servingTeamId === teamA.id && <div className="absolute -top-1 -right-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
+                                </div>
+                                {/* Name */}
+                                <div className="flex-1 min-w-0 pr-4">
+                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{teamA.name}</h2>
+                                    <div className="flex gap-1 mt-1">
+                                        {Array.from({length: requiredWins}).map((_, i) => (
+                                            <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < winsA ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Score */}
+                            <div className="bg-[#181d2e] h-full flex items-center justify-center px-4 md:px-8 border-l border-white/5 border-r border-[#0f172a]">
+                                <span className={`font-black text-[#827DFF] tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`}>
+                                    {match.scoreA}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Center Info - Tournament Logo */}
+                        <div className="flex flex-col items-center justify-center z-10 relative flex-shrink-0 bg-[#0f172a] w-16 md:w-36 h-full p-2 border-x border-black/50">
+                            {tournament?.logoUrl ? (
+                                <img src={tournament.logoUrl} className="h-full w-full object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
+                            ) : (
+                                <div className="text-[10px] md:text-xs text-white/50 font-bold uppercase tracking-widest text-center leading-tight">
+                                    VS
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Team B Section */}
+                        <div className="flex-1 flex items-center justify-between pr-2 md:pr-4 pl-0 bg-[#2b2a3b] border-r-4 border-[#4C8BFF] flex-row-reverse">
+                            <div className="flex flex-row-reverse items-center flex-1">
+                                {/* Logo */}
+                                <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-8 h-8 md:w-12 md:h-12 ml-2">
+                                    {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{teamB.name[0]}</div>}
+                                    {match.servingTeamId === teamB.id && <div className="absolute -top-1 -left-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
+                                </div>
+                                {/* Name */}
+                                <div className="flex-1 min-w-0 pl-4 flex flex-col items-end">
+                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{teamB.name}</h2>
+                                    <div className="flex gap-1 mt-1 justify-end">
+                                        {Array.from({length: requiredWins}).map((_, i) => (
+                                            <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < winsB ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Score */}
+                            <div className="bg-[#181d2e] h-full flex items-center justify-center px-4 md:px-8 border-r border-white/5 border-l border-[#0f172a]">
+                                <span className={`font-black text-[#4C8BFF] tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`}>
+                                    {match.scoreB}
+                                </span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+          )
+      )}
+
+      {/* --- CONTROLS OVERLAY --- */}
+      {showControls && isAdmin && onPoint && (
+          <div className="absolute inset-x-0 bottom-0 z-50 bg-black/80 backdrop-blur-xl border-t border-white/20 p-4 animate-in slide-in-from-bottom-10 max-h-[60vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-black text-white uppercase italic">Controles de Partido</h3>
+                  <button onClick={() => setShowControls(false)} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded font-bold uppercase text-xs">Cerrar</button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Team A Controls */}
+                  <ScoreControl 
+                      role={currentUser?.role as any}
+                      linkedTeamId={currentUser?.linkedTeamId}
+                      onPoint={onPoint}
+                      onSubtractPoint={onSubtractPoint}
+                      onRequestTimeout={onRequestTimeout!}
+                      onRequestSub={onRequestSub!}
+                      onModifyRotation={onModifyRotation!}
+                      onSetServe={onSetServe!}
+                      teamId={teamA.id}
+                      teamName={teamA.name}
+                      players={match.rotationA}
+                      disabled={match.status === 'finished'}
+                      timeoutsUsed={match.timeoutsA}
+                      subsUsed={match.substitutionsA}
+                      isServing={match.servingTeamId === teamA.id}
+                  />
+
+                  {/* Team B Controls */}
+                  <ScoreControl 
+                      role={currentUser?.role as any}
+                      linkedTeamId={currentUser?.linkedTeamId}
+                      onPoint={onPoint}
+                      onSubtractPoint={onSubtractPoint}
+                      onRequestTimeout={onRequestTimeout!}
+                      onRequestSub={onRequestSub!}
+                      onModifyRotation={onModifyRotation!}
+                      onSetServe={onSetServe!}
+                      teamId={teamB.id}
+                      teamName={teamB.name}
+                      players={match.rotationB}
+                      disabled={match.status === 'finished'}
+                      timeoutsUsed={match.timeoutsB}
+                      subsUsed={match.substitutionsB}
+                      isServing={match.servingTeamId === teamB.id}
+                  />
+              </div>
+          </div>
+      )}
+
+    </div>
+  );
+};
+
+export default TVOverlay;
