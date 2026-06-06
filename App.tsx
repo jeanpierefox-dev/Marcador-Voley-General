@@ -65,8 +65,6 @@ export const App: React.FC = () => {
   const isMainReferee = currentUser?.role === 'MAIN_REFEREE';
   // Privilege Check for Match Control (Admin or Main Referee)
   const canControlMatch = isAdmin || isMainReferee;
-  // Privilege Check for Broadcasting (Admin Only)
-  const canBroadcast = isAdmin;
   
   // Navigation
   const [currentView, setCurrentView] = useState('home'); 
@@ -138,6 +136,10 @@ export const App: React.FC = () => {
 
   // Auto-Start Countdown State
   const [nextSetCountdown, setNextSetCountdown] = useState<number | null>(null);
+
+  // Player Stats Control Panel State
+  const [statsPanelTeam, setStatsPanelTeam] = useState<string>('team_a');
+  const [statsPanelPlayerId, setStatsPanelPlayerId] = useState<string>('');
 
   // Refs to track previous state for auto-opening modal
   const prevMatchStatus = useRef<string | undefined>(undefined);
@@ -1208,7 +1210,6 @@ export const App: React.FC = () => {
       currentView={currentView}
       isCloudConnected={isCloudConnected}
       onOpenCloudConfig={() => setShowCloudConfig(true)}
-      onOpenStreamGuide={() => setShowStreamGuide(true)}
     >
       {/* CLOUD CONFIG MODAL */}
       {showCloudConfig && (
@@ -1432,75 +1433,6 @@ export const App: React.FC = () => {
                              {canControlMatch && (
                                  <>
                                     <button onClick={openEditRules} className="bg-white/5 hover:bg-white/10 text-slate-300 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10">Reglas</button>
-                                    
-                                    {/* BUTTONS NOW UPDATE CLOUD STATE */}
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), style: prev.tvSettings?.style === 'vertical' ? 'horizontal' : 'vertical'}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition bg-black/20 text-slate-300 hover:bg-white/10`}
-                                    >
-                                        TV: {liveMatch.tvSettings?.style === 'vertical' ? '📱 Vertical' : '🖥️ Horizontal'}
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), forceCameraChangeTrigger: Date.now()}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition bg-black/20 text-slate-300 hover:bg-white/10`}
-                                        title="Cambiar Cámara en Pantalla TV"
-                                    >
-                                        📷 Switch Cámara
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), triggerHawkEye: Date.now()}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition bg-orange-600 hover:bg-orange-500 text-white`}
-                                    >
-                                        🦅 Ojo de Halcón
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showFormations: !(prev.tvSettings?.showFormations)}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.tvSettings?.showFormations ? 'bg-indigo-600' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        📸 Formaciones
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showPlayerStats: !(prev.tvSettings?.showPlayerStats)}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.tvSettings?.showPlayerStats ? 'bg-indigo-600' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        📊 Jugador
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showTeamStats: !(prev.tvSettings?.showTeamStats)}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.tvSettings?.showTeamStats ? 'bg-indigo-600' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        📈 Equipo
-                                    </button>
-
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showSetStatsExt: !(prev.tvSettings?.showSetStatsExt)}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.tvSettings?.showSetStatsExt ? 'bg-indigo-600' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        📉 Estad. Set
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showTopPlayersExt: !(prev.tvSettings?.showTopPlayersExt)}} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.tvSettings?.showTopPlayersExt ? 'bg-indigo-600' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        👑 Top Jugadores
-                                    </button>
-
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, showScoreboard: !prev.showScoreboard} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.showScoreboard ? 'bg-green-600 text-white' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        Tablero
-                                    </button>
-                                    <button 
-                                        onClick={() => updateLiveMatch(prev => prev ? {...prev, showStats: !prev.showStats} : null)} 
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 transition ${liveMatch.showStats ? 'bg-blue-600 text-white' : 'bg-black/20 text-slate-500'}`}
-                                    >
-                                        Stats TV
-                                    </button>
-                                    
-                                    {canBroadcast && (
-                                        <button onClick={() => setTvMode(true)} className="bg-corp-accent hover:bg-corp-accent-hover text-white px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest shadow">Vista TV 📺</button>
-                                    )}
                                     <button onClick={handleOpenMvpSelection} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-500/20 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest">Terminar</button>
                                  </>
                              )}
@@ -1536,6 +1468,127 @@ export const App: React.FC = () => {
                                 </div>
                                 <div className="text-4xl lg:text-6xl font-black text-white tabular-nums w-1/3 text-right">{liveMatch.scoreB}</div>
                             </div>
+                            
+                            {/* TV Transmission Controls (Center Panel) */}
+                            {canControlMatch && (
+                                <div className="bg-black/40 rounded-xl border border-white/10 p-4 shadow-xl">
+                                    <h4 className="text-sm font-black text-white uppercase italic tracking-widest border-b border-white/10 pb-2 mb-4 text-center">Controles de Transmisión</h4>
+                                    
+                                    <div className="flex w-full justify-between items-center bg-black/30 rounded p-2 mb-2 border border-white/5">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Marcador TV</span>
+                                        <button 
+                                            onClick={() => updateLiveMatch(prev => prev ? {...prev, showScoreboard: !prev.showScoreboard} : null)} 
+                                            className={`px-4 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition ${liveMatch.showScoreboard ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                        >
+                                            {liveMatch.showScoreboard ? 'Visible' : 'Oculto'}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex w-full justify-between items-center bg-black/30 rounded p-2 mb-2 border border-white/5">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Rotación</span>
+                                        <button 
+                                            onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showFormations: !(prev.tvSettings?.showFormations)}} : null)} 
+                                            className={`px-4 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showFormations ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                        >
+                                            {liveMatch.tvSettings?.showFormations ? 'Activo' : 'Inactivo'}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex w-full justify-between items-center bg-black/30 rounded p-2 mb-4 border border-white/5">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                            Stats & Gráficos
+                                            <button onClick={() => setTvMode(true)} className="ml-2 bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest shadow">Vista TV 📺</button>
+                                        </span>
+                                        <div className="flex gap-1 justify-end flex-wrap">
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showSetStatsExt: !(prev.tvSettings?.showSetStatsExt)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showSetStatsExt ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Stats Set (%)
+                                            </button>
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showPointEvolution: !(prev.tvSettings?.showPointEvolution)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showPointEvolution ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Evol. Puntos
+                                            </button>
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showTeamStats: !(prev.tvSettings?.showTeamStats)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showTeamStats ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Equipo
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="border border-white/10 rounded overflow-hidden">
+                                        <div className="bg-white/5 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                                            Hawk-Eye Challenge
+                                        </div>
+                                        <div className="flex gap-2 p-2">
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), hawkEyeStatus: prev.tvSettings?.hawkEyeStatus === 'in' ? null : 'in'}} : null)} 
+                                                className={`flex-1 py-2 rounded text-xs font-black uppercase transition ${liveMatch.tvSettings?.hawkEyeStatus === 'in' ? 'bg-green-500 text-black shadow-[0_0_15px_rgba(34,197,94,0.5)]' : 'bg-green-900/30 text-green-500 border border-green-500/30'}`}
+                                            >
+                                                IN (Dentro)
+                                            </button>
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), hawkEyeStatus: prev.tvSettings?.hawkEyeStatus === 'out' ? null : 'out'}} : null)} 
+                                                className={`flex-1 py-2 rounded text-xs font-black uppercase transition ${liveMatch.tvSettings?.hawkEyeStatus === 'out' ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]' : 'bg-red-900/30 text-red-500 border border-red-500/30'}`}
+                                            >
+                                                OUT (Fuera)
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 border border-white/10 rounded overflow-hidden">
+                                        <div className="bg-white/5 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                                            Destacar Jugador (TV)
+                                        </div>
+                                        <div className="flex flex-col gap-2 p-2">
+                                            <div className="flex gap-2">
+                                                <select
+                                                    value={statsPanelTeam}
+                                                    onChange={e => {
+                                                        setStatsPanelTeam(e.target.value);
+                                                        setStatsPanelPlayerId('');
+                                                    }}
+                                                    className="flex-1 p-2 bg-black/40 border border-white/10 text-white text-xs font-bold focus:border-vnl-accent outline-none uppercase"
+                                                >
+                                                    <option value="team_a">Local (A)</option>
+                                                    <option value="team_b">Visita (B)</option>
+                                                </select>
+                                                <select
+                                                    value={statsPanelPlayerId}
+                                                    onChange={e => setStatsPanelPlayerId(e.target.value)}
+                                                    className="flex-1 p-2 bg-black/40 border border-white/10 text-white text-xs font-bold focus:border-vnl-accent outline-none uppercase"
+                                                >
+                                                    <option value="">-- Jugador --</option>
+                                                    {(statsPanelTeam === 'team_a' ? [...liveMatch.rotationA, ...liveMatch.benchA] : [...liveMatch.rotationB, ...liveMatch.benchB]).sort((p1, p2) => p1.number - p2.number).map(p => (
+                                                        <option key={p.id} value={p.id}>#{p.number} {p.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="flex gap-2 mt-1">
+                                                <button
+                                                    onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), featuredPlayerId: statsPanelPlayerId, featuredPlayerMode: prev.tvSettings?.featuredPlayerMode === 'presentation' ? null : 'presentation'}} : null)}
+                                                    disabled={!statsPanelPlayerId}
+                                                    className={`flex-1 py-2 rounded text-xs font-black uppercase transition disabled:opacity-50 ${liveMatch.tvSettings?.featuredPlayerMode === 'presentation' ? 'bg-vnl-accent text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800 text-cyan-400 hover:bg-slate-700'}`}
+                                                >
+                                                    Lanzar Foto
+                                                </button>
+                                                <button
+                                                    onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), featuredPlayerId: statsPanelPlayerId, featuredPlayerMode: prev.tvSettings?.featuredPlayerMode === 'stats' ? null : 'stats'}} : null)}
+                                                    disabled={!statsPanelPlayerId}
+                                                    className={`flex-1 py-2 rounded text-xs font-black uppercase transition disabled:opacity-50 ${liveMatch.tvSettings?.featuredPlayerMode === 'stats' ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(249,115,22,0.5)]' : 'bg-slate-800 text-orange-400 hover:bg-slate-700'}`}
+                                                >
+                                                    Lanzar Stats
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             
                             {/* Courts - Desktop Only here, hidden on mobile */}
                             <div className={`hidden lg:flex ${isVertical ? 'flex-row' : 'flex-col'} gap-1`}>

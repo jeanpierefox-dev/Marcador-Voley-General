@@ -133,14 +133,18 @@ export interface LiveMatchState {
     style: 'horizontal' | 'vertical';
     triggerInLogoTransition?: number;
     triggerHawkEye?: number;
+    hawkEyeStatus?: 'in' | 'out' | null;
     showPlayerStats?: boolean;
     showTeamStats?: boolean;
+    featuredPlayerId?: string;
+    featuredPlayerMode?: 'presentation' | 'stats' | null;
     showVersus?: number; // Timestamp to show it briefly
     triggerSetPoint?: number;
     triggerMatchPoint?: number;
     forceCameraChangeTrigger?: number;
     showFormations?: boolean;
     showSetStatsExt?: boolean;
+    showPointEvolution?: boolean;
     showTopPlayersExt?: boolean;
   };
 }

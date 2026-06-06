@@ -70,16 +70,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   const [isConstructing, setIsConstructing] = useState(false);
 
   // New features state
-  const [hawkEyeVisible, setHawkEyeVisible] = useState(false);
   const [pointBanner, setPointBanner] = useState<{ text: string, color: string } | null>(null);
-
-  useEffect(() => {
-     if (match.tvSettings?.triggerHawkEye) {
-         setHawkEyeVisible(true);
-         const t = setTimeout(() => setHawkEyeVisible(false), 5000); // show for 5 seconds
-         return () => clearTimeout(t);
-     }
-  }, [match.tvSettings?.triggerHawkEye]);
 
   // Set Point / Match Point Logic
   const prevScore = useRef({ a: match.scoreA, b: match.scoreB });
@@ -119,7 +110,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const chromaMode = 'none'; // Replaced local state with fallback default
+  const chromaMode = 'green' as string; // Replaced local state with fallback default
   const [showUI, setShowUI] = useState(true);
 
   // PeerJS Logic (Admin - Broadcaster)
@@ -498,17 +489,6 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       errors: calculateTeamErrors(teamB.id)
   };
 
-  const canUseTikTok = currentUser?.role === 'ADMIN';
-
-  // Function to toggle scoreboard safely
-  const toggleScoreboard = () => {
-      const newState = !visibleScoreboard;
-      setVisibleScoreboard(newState);
-      if (onUpdateMatch) {
-          onUpdateMatch({ showScoreboard: newState });
-      }
-  };
-
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-end pb-0 font-sans bg-transparent overflow-hidden transition-all duration-300">
       
@@ -634,23 +614,6 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                 className="h-16 w-16 md:h-24 md:w-24 object-contain drop-shadow-2xl opacity-100" 
               />
           </div>
-      )}
-
-      {/* TikTok & Facebook Live Buttons - Admin Only */}
-      {canUseTikTok && showUI && (
-        <div className="absolute top-36 right-6 landscape:top-24 landscape:right-4 portrait:bottom-24 portrait:right-4 portrait:top-auto flex flex-col items-center gap-4 opacity-100 z-20 transition-all">
-           {/* Scoreboard Toggle Button */}
-           <button 
-             onClick={toggleScoreboard}
-             className={`flex flex-col items-center gap-2 group hover:scale-105 transition`}
-             title={visibleScoreboard ? "Ocultar Marcador" : "Mostrar Marcador"}
-           >
-               <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition shadow-[0_0_15px_rgba(59,130,246,0.6)] ${visibleScoreboard ? 'bg-blue-600 border-blue-400' : 'bg-black/80 border-gray-500'}`}>
-                   <span className="text-2xl">🔢</span>
-               </div>
-               <span className="text-[8px] font-bold text-white bg-black/50 px-1 rounded">{visibleScoreboard ? 'Ocultar' : 'Mostrar'}</span>
-           </button>
-        </div>
       )}
 
       {/* --- ROTATION OVERLAY (COURT VISUALIZATION) --- */}
@@ -862,14 +825,116 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* HAWK EYE EFFECT */}
-      {hawkEyeVisible && (
-          <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-500">
+      {match.tvSettings?.hawkEyeStatus && (
+          <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-500">
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
-              <div className="w-[80vw] h-[60vh] border-2 border-orange-500/50 shadow-[0_0_50px_rgba(249,115,22,0.3)] relative overflow-hidden flex flex-col items-center justify-center">
-                  <div className="absolute top-0 left-0 w-full h-[5px] bg-orange-500 shadow-[0_0_20px_#f97316] animate-[scan_2s_linear_infinite]"></div>
-                  <h2 className="text-4xl md:text-6xl font-black text-white italic tracking-widest drop-shadow-[0_0_10px_black] bg-black/50 px-8 py-2 border border-orange-500/50">CHALLENGE</h2>
-                  <p className="text-orange-400 font-mono mt-4 animate-pulse">ANALIZANDO TRAYECTORIA...</p>
+              
+              <div className="flex flex-col items-center justify-center gap-8 relative z-10 w-[80vw] h-[60vh] border-4 border-white/10 bg-black/60 shadow-[0_0_100px_rgba(0,0,0,0.8)] rounded-3xl overflow-hidden overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-[5px] bg-white/20 shadow-[0_0_20px_#ffffff] animate-[scan_3s_linear_infinite]"></div>
+                  
+                  <h2 className="text-4xl md:text-6xl font-black text-white italic tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]">CHALLENGE</h2>
+                  
+                  {match.tvSettings.hawkEyeStatus === 'in' ? (
+                      <div className="animate-in zoom-in spin-in-12 duration-700 flex flex-col items-center">
+                          <div className="w-32 h-32 md:w-48 md:h-48 rounded-full bg-green-500/20 border-8 border-green-500 flex items-center justify-center shadow-[0_0_100px_rgba(34,197,94,0.6)] relative">
+                             <div className="w-24 h-24 md:w-36 md:h-36 bg-green-500 rounded-full animate-pulse blur-sm absolute"></div>
+                             <span className="text-6xl md:text-8xl drop-shadow-[0_0_20px_black] relative z-10">✅</span>
+                          </div>
+                          <h1 className="text-6xl md:text-[8rem] font-black text-transparent bg-clip-text bg-gradient-to-b from-green-300 to-green-600 drop-shadow-[0_0_50px_rgba(34,197,94,0.8)] mt-8 pt-4">IN</h1>
+                          <p className="text-green-400 font-bold text-2xl md:text-4xl tracking-[0.5em] mt-2">DENTRO</p>
+                      </div>
+                  ) : (
+                      <div className="animate-in zoom-in spin-in-12 duration-700 flex flex-col items-center">
+                          <div className="w-32 h-32 md:w-48 md:h-48 rounded-full bg-red-600/20 border-8 border-red-600 flex items-center justify-center shadow-[0_0_100px_rgba(220,38,38,0.6)] relative">
+                             <div className="w-24 h-24 md:w-36 md:h-36 bg-red-600 rounded-full animate-[pulse_0.5s_infinite] blur-sm absolute"></div>
+                             <span className="text-6xl md:text-8xl drop-shadow-[0_0_20px_black] relative z-10">❌</span>
+                          </div>
+                          <h1 className="text-6xl md:text-[8rem] font-black text-transparent bg-clip-text bg-gradient-to-b from-red-400 to-red-600 drop-shadow-[0_0_50px_rgba(220,38,38,0.8)] mt-8 pt-4">OUT</h1>
+                          <p className="text-red-400 font-bold text-2xl md:text-4xl tracking-[0.5em] mt-2">FUERA</p>
+                      </div>
+                  )}
               </div>
+          </div>
+      )}
+
+      {/* FEATURED PLAYER EFFECT */}
+      {match.tvSettings?.featuredPlayerId && match.tvSettings.featuredPlayerMode && (
+          <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in duration-500">
+             {(() => {
+                 const player = match.rotationA.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
+                                match.benchA.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
+                                match.rotationB.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
+                                match.benchB.find(p => p.id === match.tvSettings!.featuredPlayerId);
+                 if (!player) return null;
+                 
+                 const pTeam = [...match.rotationA, ...match.benchA].some(p => p.id === player.id) ? teamA : teamB;
+                 const isPresentation = match.tvSettings.featuredPlayerMode === 'presentation';
+
+                 // Calculate simplistic stats
+                 const acts = match.sets.flatMap(s => s.history).filter(h => h.playerId === player.id);
+                 const kills = acts.filter(h => h.type === 'attack').length;
+                 const blocks = acts.filter(h => h.type === 'block').length;
+                 const aces = acts.filter(h => h.type === 'ace').length;
+                 const pts = kills + blocks + aces;
+
+                 return (
+                     <div className="w-[90vw] max-w-4xl bg-gradient-to-br from-black/90 to-slate-900 border border-white/20 rounded-2xl shadow-[0_0_50px_rgba(255,255,255,0.1)] overflow-hidden flex relative">
+                         {/* Player Image Side */}
+                         <div className="w-1/2 relative bg-gray-800 flex items-center justify-center min-h-[400px] border-r border-white/10">
+                             {player.profile?.photoUrl ? (
+                                 <img src={player.profile.photoUrl} className="absolute w-full h-full object-cover opacity-80 mix-blend-luminosity" />
+                             ) : (
+                                 <span className="text-[10rem] opacity-20">👤</span>
+                             )}
+                             <p className="absolute bottom-4 left-4 text-[6rem] font-black text-white/10 italic leading-none">{player.number}</p>
+                         </div>
+                         
+                         {/* Info Side */}
+                         <div className="w-1/2 p-8 flex flex-col justify-center">
+                             <div className="mb-6">
+                                 <h2 className="text-6xl font-black text-white uppercase italic tracking-tighter leading-none">{player.name}</h2>
+                                 <p className="text-xl font-bold text-vnl-accent uppercase tracking-widest mt-2">{player.role} | {pTeam.name}</p>
+                             </div>
+                             
+                             {isPresentation ? (
+                                 <div className="space-y-4 animate-in slide-in-from-right-8 delay-150">
+                                     <div className="bg-white/5 p-4 rounded border-l-4 border-vnl-accent">
+                                         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Nacionalidad</p>
+                                         <p className="text-2xl font-black text-white">N/A</p>
+                                     </div>
+                                     <div className="bg-white/5 p-4 rounded border-l-4 border-yellow-500">
+                                         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Altura</p>
+                                         <p className="text-2xl font-black text-white">{player.profile?.height || 'N/A'} cm</p>
+                                     </div>
+                                 </div>
+                             ) : (
+                                 <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-right-8 delay-150">
+                                     <div className="col-span-2 bg-white/5 p-4 rounded border-l-4 border-vnl-accent flex justify-between items-center">
+                                         <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">Puntos Totales</p>
+                                         <p className="text-4xl font-black text-white">{pts}</p>
+                                     </div>
+                                     <div className="bg-white/5 p-4 rounded flex flex-col items-center justify-center">
+                                         <p className="text-3xl font-black text-white">{kills}</p>
+                                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center mt-1">Ataques</p>
+                                     </div>
+                                     <div className="bg-white/5 p-4 rounded flex flex-col items-center justify-center">
+                                         <p className="text-3xl font-black text-white">{blocks}</p>
+                                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center mt-1">Bloqueos</p>
+                                     </div>
+                                     <div className="col-span-2 bg-white/5 p-4 rounded flex flex-col items-center justify-center">
+                                         <p className="text-3xl font-black text-white">{aces}</p>
+                                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center mt-1">Aces</p>
+                                     </div>
+                                 </div>
+                             )}
+                         </div>
+                         {/* Watermark Logo */}
+                         <div className="absolute top-4 right-4 opacity-30">
+                             <img src={tournament?.logoUrl} className="w-16 h-16 object-contain grayscale" />
+                         </div>
+                     </div>
+                 );
+             })()}
           </div>
       )}
 
@@ -942,7 +1007,104 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
 
-      {/* --- EXTENDED SET STATISTICS OVERLAY --- */}
+      {/* --- POINT EVOLUTION (TIMEOUT) OVERLAY --- */}
+      {match.tvSettings?.showPointEvolution && (
+          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in zoom-in duration-500">
+             <div className="relative w-full max-w-4xl bg-[#0f0f13] border border-white/20 rounded shadow-[0_0_50px_rgba(0,0,0,0.9)] overflow-hidden">
+                 <div className="bg-gradient-to-r from-blue-900 to-red-900 p-4 border-b border-white/20 mb-4 flex justify-between items-center">
+                     <div className="text-white font-black text-2xl italic tracking-tighter">VOLLEYTV</div>
+                     <div className="text-white/80 font-bold uppercase tracking-widest text-sm">Evolución de Puntos - Set {match.currentSet}</div>
+                 </div>
+                 
+                 <div className="px-8 pb-8 flex flex-col gap-4">
+                     {/* Team Names Header */}
+                     <div className="flex w-full items-center">
+                         <div className="flex-1 flex justify-end px-4 gap-4 items-center">
+                            <span className="text-2xl font-black text-white">{teamA.name}</span>
+                            {teamA.logoUrl && <img src={teamA.logoUrl} className="w-10 h-10 object-contain" />}
+                         </div>
+                         <div className="w-[100px] text-center text-slate-500 font-bold uppercase text-[10px] tracking-widest">Score</div>
+                         <div className="flex-1 flex justify-start px-4 gap-4 items-center flex-row-reverse">
+                            <span className="text-2xl font-black text-white">{teamB.name}</span>
+                            {teamB.logoUrl && <img src={teamB.logoUrl} className="w-10 h-10 object-contain" />}
+                         </div>
+                     </div>
+
+                     {/* Point History Log */}
+                     <div className="flex flex-col gap-1 overflow-y-auto max-h-[50vh] pr-2 custom-scrollbar">
+                         {(() => {
+                             const currSet = match.sets[match.currentSet - 1] || { history: [] };
+                             
+                             // Calculate running score
+                             let runA = 0;
+                             let runB = 0;
+                             
+                             // We only want point-scoring events
+                             const scoringEvents = currSet.history.filter(h => 
+                                 h.type === 'attack' || h.type === 'block' || h.type === 'ace' || h.type === 'opponent_error'
+                             );
+
+                             return scoringEvents.map((h, i) => {
+                                 // Who scored?
+                                 // Opponent error means the OTHER team scored.
+                                 let scorerA = false;
+                                 let scorerB = false;
+
+                                 if (h.type === 'opponent_error') {
+                                     if (h.teamId === teamA.id) { scorerB = true; } // A made error, B scored
+                                     else { scorerA = true; } // B made error, A scored
+                                 } else {
+                                     if (h.teamId === teamA.id) { scorerA = true; }
+                                     else { scorerB = true; }
+                                 }
+
+                                 if (scorerA) runA++;
+                                 if (scorerB) runB++;
+
+                                 // Optional: Who made the action?
+                                 const pA = scorerA && h.type !== 'opponent_error' ? teamA.players.find(p=>p.id===h.playerId) : null;
+                                 const pB = scorerB && h.type !== 'opponent_error' ? teamB.players.find(p=>p.id===h.playerId) : null;
+
+                                 const typeIcon = h.type === 'attack' ? '💥' : h.type === 'block' ? '🧱' : h.type === 'ace' ? '🎯' : '❌';
+
+                                 return (
+                                     <div key={i} className="flex w-full items-center bg-white/5 rounded py-2">
+                                         {/* Team A Side */}
+                                         <div className="flex-1 flex justify-end px-4 gap-2 items-center">
+                                             {scorerA && (
+                                                 <>
+                                                     <span className="text-white/50 text-xs italic">{pA ? `#${pA.number} ${pA.name}` : h.type === 'opponent_error' ? 'Error Rival' : ''}</span>
+                                                     <span className="text-lg">{typeIcon}</span>
+                                                 </>
+                                             )}
+                                         </div>
+                                         
+                                         {/* Center Score */}
+                                         <div className="w-[100px] flex justify-center items-center gap-2 font-black text-2xl">
+                                             <span className={scorerA ? 'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.8)]' : 'text-slate-600'}>{runA}</span>
+                                             <span className="text-slate-600">-</span>
+                                             <span className={scorerB ? 'text-red-400 drop-shadow-[0_0_10px_rgba(248,113,113,0.8)]' : 'text-slate-600'}>{runB}</span>
+                                         </div>
+
+                                         {/* Team B Side */}
+                                         <div className="flex-1 flex justify-start px-4 gap-2 items-center text-left">
+                                             {scorerB && (
+                                                 <>
+                                                     <span className="text-lg">{typeIcon}</span>
+                                                     <span className="text-white/50 text-xs italic">{pB ? `#${pB.number} ${pB.name}` : h.type === 'opponent_error' ? 'Error Rival' : ''}</span>
+                                                 </>
+                                             )}
+                                         </div>
+                                     </div>
+                                 );
+                             });
+                         })()}
+                         
+                     </div>
+                 </div>
+             </div>
+          </div>
+      )}
       {match.tvSettings?.showSetStatsExt && (
           <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
              <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
@@ -1003,21 +1165,30 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                  { label: 'OPPONENT ERRORS', l: errOPA, r: errOPB, max: Math.max(errOPA, errOPB) || 10 },
                              ];
 
-                             return rows.map((r, idx) => (
+                             return rows.map((r, idx) => {
+                                 const total = r.l + r.r;
+                                 const pctL = total > 0 ? Math.round((r.l / total) * 100) : 0;
+                                 const pctR = total > 0 ? Math.round((r.r / total) * 100) : 0;
+                                 
+                                 return (
                                  <div key={idx} className="flex justify-center items-center w-full">
                                      <div className="flex-1 flex justify-end items-center px-4 relative h-8">
                                          <div className="absolute top-1/2 -translate-y-1/2 right-0 h-4 bg-gradient-to-r from-transparent to-blue-600 z-0" style={{ width: `${(r.l / Math.max(1, r.max)) * 100}%`}}></div>
-                                         <span className="relative z-10 text-white font-black text-lg bg-[#302766] px-3 py-0.5 rounded shadow-lg">{r.l}</span>
+                                         <span className="relative z-10 text-white font-black text-lg bg-[#302766] px-3 py-0.5 rounded shadow-lg flex items-center gap-2">
+                                            {r.l} <span className="text-[10px] text-blue-300 opacity-70">({pctL}%)</span>
+                                         </span>
                                      </div>
                                      <div className="w-1/4 text-center text-white/80 font-black tracking-widest text-sm bg-black/20 py-1">
                                          {r.label}
                                      </div>
                                      <div className="flex-1 flex justify-start items-center px-4 relative h-8">
                                          <div className="absolute top-1/2 -translate-y-1/2 left-0 h-4 bg-gradient-to-l from-transparent to-red-600 z-0" style={{ width: `${(r.r / Math.max(1, r.max)) * 100}%`}}></div>
-                                         <span className="relative z-10 text-white font-black text-lg bg-[#66273c] px-3 py-0.5 rounded shadow-lg">{r.r}</span>
+                                         <span className="relative z-10 text-white font-black text-lg bg-[#66273c] px-3 py-0.5 rounded shadow-lg flex items-center gap-2 flex-row-reverse">
+                                            {r.r} <span className="text-[10px] text-red-300 opacity-70">({pctR}%)</span>
+                                         </span>
                                      </div>
                                  </div>
-                             ));
+                             )});
                          })()}
                      </div>
                  </div>
