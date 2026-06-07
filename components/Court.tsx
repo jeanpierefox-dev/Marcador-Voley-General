@@ -13,17 +13,9 @@ interface CourtProps {
 }
 
 export const Court: React.FC<CourtProps> = ({ players = [], serving, teamName, rotationError, variant = 'default', isVertical = false }) => {
-  // Safety check: Ensure players array exists and has length
   const safePlayers = Array.isArray(players) ? players : [];
   const isReferee = variant === 'referee';
 
-  // Vertical Grid Mapping (90 deg clockwise)
-  // 4 (1,1) -> (1,2)
-  // 3 (1,2) -> (2,2)
-  // 2 (1,3) -> (3,2)
-  // 5 (2,1) -> (1,1)
-  // 6 (2,2) -> (2,1)
-  // 1 (2,3) -> (3,1)
   const getVerticalGrid = (pos: number) => {
       switch(pos) {
           case 4: return 'row-start-1 col-start-2';
@@ -35,6 +27,52 @@ export const Court: React.FC<CourtProps> = ({ players = [], serving, teamName, r
           default: return '';
       }
   };
+
+  if (isReferee) {
+      return (
+          <div className={`p-2 rounded w-full bg-[#2a7df5] ring-2 ring-blue-400 ${rotationError ? 'animate-pulse ring-red-500' : ''}`}>
+              <div className="flex justify-between items-center mb-2 px-1">
+                  <span className="font-black text-white italic text-lg tracking-wider">{teamName || 'Equipo'}</span>
+                  {serving && (
+                      <div className="flex items-center gap-2 bg-[#ffd529] px-2 py-0.5 rounded shadow">
+                          <span className="w-2.5 h-2.5 rounded-full bg-yellow-600"></span>
+                          <span className="text-black font-black text-[10px] tracking-widest uppercase">Saque</span>
+                      </div>
+                  )}
+              </div>
+              <div className="bg-[#f28e46] border-[3px] border-white relative h-48 sm:h-64 shadow-inner">
+                  {/* Attack line */}
+                  <div className="absolute top-1/2 left-0 right-0 h-1 bg-white/60 -translate-y-1/2"></div>
+                  {/* Service line */}
+                  <div className="absolute bottom-0 left-0 right-0 h-1.5 border-b-[6px] border-dashed border-white/50 w-full mb-1"></div>
+                  
+                  {/* Player Grid matching Image 1: Top = 4,3,2 | Bottom = 5,6,1 */}
+                  <div className="grid h-full grid-cols-3 grid-rows-2">
+                       {POSITIONS_LAYOUT.map((layout) => {
+                           const playerByIndex = safePlayers[layout.pos - 1];
+                           return (
+                               <div key={layout.pos} className={`${layout.grid} relative flex flex-col items-center justify-center p-1 border border-white/10`}>
+                                   <span className="absolute top-1 right-2 font-black text-black/20 text-[10px]">{layout.pos}</span>
+                                   {playerByIndex ? (
+                                       <div className="flex flex-col items-center mt-2">
+                                           <div className={`w-8 sm:w-10 h-8 sm:h-10 rounded-full flex items-center justify-center text-white font-black border-2 border-white text-sm sm:text-base shadow-md ${playerByIndex.name === 'Libero' ? 'bg-[#18233f] ring-2 ring-yellow-400' : 'bg-[#18233f]'}`}>
+                                               {playerByIndex.number}
+                                           </div>
+                                           <div className="-mt-1 px-3 py-0.5 bg-[#6b5036] rounded-sm text-white font-black uppercase text-[8px] sm:text-[9px] tracking-widest shadow-md">
+                                               {playerByIndex.name.split(' ')[0]}
+                                           </div>
+                                       </div>
+                                   ) : (
+                                       <span className="text-black/30 text-[10px] uppercase font-bold mt-4">N/A</span>
+                                   )}
+                               </div>
+                           );
+                       })}
+                  </div>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className={`

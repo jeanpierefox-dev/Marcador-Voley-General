@@ -824,33 +824,198 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
 
+      {/* VERSUS OVERLAY (PLAYER vs PLAYER) */}
+      {!!match.tvSettings?.showVersus && (() => {
+          let pA = match.tvSettings.featuredPlayerId ? teamA.players.find(p => p.id === match.tvSettings?.featuredPlayerId) : undefined;
+          let pB: typeof teamA.players[0] | undefined = undefined;
+          
+          if (!pA) {
+              pA = teamB.players.find(p => p.id === match.tvSettings?.featuredPlayerId);
+              if (pA) {
+                 // Swap if selected player is from team B
+                 pB = pA;
+                 pA = undefined;
+              }
+          }
+
+          const currSet = match.sets[match.currentSet - 1] || { history: [] };
+          const scoresA:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
+          const scoresB:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
+          
+          teamA.players.forEach(p => scoresA[p.id] = {pts:0, att:0, blk:0, srv:0, attTot:0 });
+          teamB.players.forEach(p => scoresB[p.id] = {pts:0, att:0, blk:0, srv:0, attTot:0 });
+
+          const setHistory = currSet.history || [];
+          setHistory.forEach(h => {
+              if(h.playerId) {
+                  let sc = h.teamId === teamA.id ? scoresA[h.playerId] : scoresB[h.playerId];
+                  if(sc) {
+                      if(['attack','block','ace'].includes(h.type)) sc.pts++;
+                      if(h.type==='attack') { sc.att++; sc.attTot++; }
+                      if(h.type==='block') sc.blk++;
+                      if(h.type==='ace') sc.srv++;
+                  }
+              }
+          });
+
+          // Fallbacks for Player A and B
+          if (!pA && !pB) {
+              let bestAId = teamA.players[0]?.id; let maxA = -1;
+              Object.entries(scoresA).forEach(([id, st]) => { if(st.pts > maxA) { maxA=st.pts; bestAId=id; }});
+              pA = teamA.players.find(p => p.id === bestAId) || teamA.players[0];
+          }
+
+          if (pA && !pB) {
+              // Find best matching role on Team B
+              const roleMatches = teamB.players.filter(p => p.role === pA?.role);
+              let bestBId = roleMatches[0]?.id || teamB.players[0]?.id; let maxB = -1;
+              roleMatches.forEach(p => { if((scoresB[p.id]?.pts || 0) > maxB) { maxB=(scoresB[p.id]?.pts || 0); bestBId=p.id; }});
+              pB = teamB.players.find(p => p.id === bestBId) || teamB.players[0];
+          } else if (pB && !pA) {
+              const roleMatches = teamA.players.filter(p => p.role === pB?.role);
+              let bestAId = roleMatches[0]?.id || teamA.players[0]?.id; let maxA = -1;
+              roleMatches.forEach(p => { if((scoresA[p.id]?.pts || 0) > maxA) { maxA=(scoresA[p.id]?.pts || 0); bestAId=p.id; }});
+              pA = teamA.players.find(p => p.id === bestAId) || teamA.players[0];
+          }
+
+          if (!pA || !pB) return null;
+
+          const stA = scoresA[pA.id] || {pts:0,att:0,blk:0,srv:0,attTot:1};
+          const stB = scoresB[pB.id] || {pts:0,att:0,blk:0,srv:0,attTot:1};
+
+          const effA = stA.attTot > 0 ? Math.round((stA.att/stA.attTot)*100) : 0;
+          const effB = stB.attTot > 0 ? Math.round((stB.att/stB.attTot)*100) : 0;
+
+          const rows = [
+              { label: 'ROLE', l: pA.role, r: pB.role },
+              { label: 'AGE', l: pA.profile?.birthDate ? (new Date().getFullYear() - new Date(pA.profile.birthDate).getFullYear()) : '-', r: pB.profile?.birthDate ? (new Date().getFullYear() - new Date(pB.profile.birthDate).getFullYear()) : '-' },
+              { label: 'HEIGHT', l: pA.profile?.height ? pA.profile.height+' cm' : '-', r: pB.profile?.height ? pB.profile.height+' cm' : '-' },
+              { label: 'TOTAL POINTS', l: stA.pts, r: stB.pts },
+              { label: 'EFFICIENCY', l: effA+'%', r: effB+'%' },
+              { label: 'ATTACKS IN', l: stA.att, r: stB.att },
+              { label: 'BLOCKS', l: stA.blk, r: stB.blk },
+              { label: 'SERVES', l: stA.srv, r: stB.srv },
+          ];
+
+          return (
+          <div className="fixed inset-0 z-50 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in slide-in-from-bottom duration-500">
+             <div className="relative flex flex-col items-center w-full max-w-5xl">
+                 <div className="flex flex-col items-center mb-6 drop-shadow-xl">
+                     <h2 className="text-7xl font-black text-white italic tracking-tighter uppercase relative">
+                        <span className="absolute -left-[5rem] -top-8 text-[#827DFF] text-xl opacity-50 tracking-tighter">VOLLEYTV</span>
+                        TOP PLAYERS
+                     </h2>
+                     <span className="text-white font-bold tracking-[0.3em] text-sm mt-1">SET {match.currentSet}</span>
+                 </div>
+                 <div className="flex w-full items-end justify-center h-[50vh]">
+                     {/* LEFT PLAYER */}
+                     <div className="w-[30%] h-[120%] relative flex justify-center">
+                         {pA.profile?.photoUrl ? (
+                            <img src={pA.profile.photoUrl} className="absolute bottom-0 h-full object-contain mb-8 z-20 drop-shadow-2xl translate-x-12"/>
+                         ) : (
+                            <div className="absolute bottom-16 w-48 h-48 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center z-20 translate-x-8">
+                                {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black text-6xl">{teamA.name.substring(0,3).toUpperCase()}</div>}
+                            </div>
+                         )}
+                         <div className="absolute bottom-0 text-white font-black italic text-4xl bg-[#4C8BFF] px-6 py-2 rounded-t z-30 shadow-2xl flex items-center gap-2 pr-12 translate-x-4">
+                            <span>{pA.role} {pA.number}</span>
+                            <div className="text-3xl ml-2 drop-shadow-md">{pA.name.split(' ')[0]}</div>
+                         </div>
+                     </div>
+                     {/* STATS BOARD */}
+                     <div className="w-[50%] bg-gradient-to-br from-[#1b143c] to-[#0e0c1f] rounded-t-xl overflow-hidden shadow-[0_-10px_40px_rgba(0,0,0,0.8)] border border-white/10 z-10 relative flex flex-col">
+                         <div className="flex justify-between items-center py-2 px-8 bg-black/40">
+                             <div className="w-12 h-6 border bg-white flex items-center justify-center overflow-hidden">
+                                 {teamA.logoUrl ? <img src={teamA.logoUrl} className="object-cover h-full w-full"/> : teamA.name.substring(0,3)}
+                             </div>
+                             <div className="w-12 h-6 border bg-white flex items-center justify-center overflow-hidden">
+                                 {teamB.logoUrl ? <img src={teamB.logoUrl} className="object-cover h-full w-full"/> : teamB.name.substring(0,3)}
+                             </div>
+                         </div>
+                         <div className="flex flex-col py-4 gap-1">
+                             {rows.map((r, i) => (
+                                 <div key={i} className="flex font-black text-lg h-9">
+                                     <div className="flex-1 bg-gradient-to-r from-[#170a4a] to-[#251bc2] flex items-center justify-start px-6 text-white drop-shadow-md">
+                                         {r.l}
+                                     </div>
+                                     <div className="w-1/3 bg-[#3f3178]/20 flex items-center justify-center text-[#c2bdf0] tracking-widest text-sm font-bold">
+                                         {r.label}
+                                     </div>
+                                     <div className="flex-1 bg-gradient-to-l from-[#4a0a1a] to-[#c21b44] flex items-center justify-end px-6 text-white drop-shadow-md">
+                                         {r.r}
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
+                     </div>
+                     {/* RIGHT PLAYER */}
+                     <div className="w-[30%] h-[120%] relative flex justify-center">
+                         {pB.profile?.photoUrl ? (
+                            <img src={pB.profile.photoUrl} className="absolute bottom-0 h-full object-contain mb-8 z-20 drop-shadow-2xl -translate-x-12 scale-x-[-1]"/>
+                         ) : (
+                            <div className="absolute bottom-16 w-48 h-48 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center z-20 -translate-x-8">
+                                {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black text-6xl">{teamB.name.substring(0,3).toUpperCase()}</div>}
+                            </div>
+                         )}
+                         <div className="absolute bottom-0 text-[#251bc2] font-black italic text-4xl bg-white px-6 py-2 rounded-t z-30 shadow-2xl flex items-center gap-2 pl-12 -translate-x-4">
+                            <div className="text-3xl mr-2 drop-shadow-md">{pB.name.split(' ')[0]}</div>
+                            <span>{pB.role} {pB.number}</span>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+          </div>
+          );
+      })()}
+
       {/* HAWK EYE EFFECT */}
       {match.tvSettings?.hawkEyeStatus && (
-          <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-500">
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
-              
-              <div className="flex flex-col items-center justify-center gap-8 relative z-10 w-[80vw] h-[60vh] border-4 border-white/10 bg-black/60 shadow-[0_0_100px_rgba(0,0,0,0.8)] rounded-3xl overflow-hidden overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-[5px] bg-white/20 shadow-[0_0_20px_#ffffff] animate-[scan_3s_linear_infinite]"></div>
+          <div className="absolute bottom-8 left-8 z-40 pointer-events-none flex items-center justify-center animate-in zoom-in slide-in-from-left duration-500">
+              <div className="flex flex-col items-center justify-center gap-2 relative z-10 w-[300px] h-[340px] border-2 border-blue-500/50 bg-[#0f111a]/95 shadow-[0_0_30px_rgba(0,0,0,0.9)] rounded-xl overflow-hidden pointer-events-auto">
+                  <div className="absolute top-0 w-full h-1 bg-blue-400"></div>
                   
-                  <h2 className="text-4xl md:text-6xl font-black text-white italic tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]">CHALLENGE</h2>
+                  <h2 className="text-xl font-black text-white italic tracking-[0.2em] mt-4 mb-2">CHALLENGE</h2>
                   
+                  <div className="relative w-[280px] h-[180px] perspective-[600px] flex items-center justify-center transform-style-3d overflow-hidden rounded border border-white/5 bg-black/50">
+                        {/* The Court Line Floor Simulation */}
+                        <div className="absolute inset-x-4 bottom-8 h-32 bg-orange-600/60 border-t-4 border-white origin-bottom rotate-x-[60deg]"></div>
+
+                        {/* OUT area */}
+                        <div className="absolute inset-x-4 bottom-[calc(2rem+8rem)] h-32 bg-blue-900/40 origin-bottom rotate-x-[60deg]"></div>
+
+                        {/* The Ball Animation (Adjusted for smaller size) */}
+                        {match.tvSettings.hawkEyeStatus === 'in' ? (
+                            <>
+                                <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-8 h-4 bg-black/80 rounded-full blur-sm animate-[shadowScaleIn_2s_ease-in_forwards]"></div>
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-300 rounded-full shadow-[inset_-4px_-4px_8px_rgba(0,0,0,0.5),0_0_10px_rgba(253,224,71,0.8)] flex items-center justify-center animate-[bounceInLine_2s_ease-out_forwards]" style={{animation: 'dropIn 2s ease-out forwards'}}>
+                                    <div className="w-full h-[1px] bg-black/20 rotate-45"></div>
+                                    <div className="w-full h-[1px] bg-black/20 -rotate-45 absolute"></div>
+                                </div>
+                                <style>{`@keyframes dropIn { 0% { transform: translate(-50%, -150px) scale(0.5); } 100% { transform: translate(-50%, 105px) scale(1); } }`}</style>
+                                <div className="absolute top-[125px] left-1/2 -translate-x-1/2 w-16 h-8 border-2 border-yellow-400 rounded-[50%] animate-[ripple_1s_ease-out_2s_forwards] opacity-0"></div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="absolute bottom-[35%] left-1/2 -translate-x-1/2 w-8 h-4 bg-black/80 rounded-full blur-sm animate-[shadowScaleOut_2s_ease-in_forwards]"></div>
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-300 rounded-full shadow-[inset_-4px_-4px_8px_rgba(0,0,0,0.5),0_0_10px_rgba(253,224,71,0.8)] flex items-center justify-center animate-[bounceOutLine_2s_ease-out_forwards]" style={{animation: 'dropOut 2s ease-out forwards'}}>
+                                    <div className="w-full h-[1px] bg-black/20 rotate-45"></div>
+                                    <div className="w-full h-[1px] bg-black/20 -rotate-45 absolute"></div>
+                                </div>
+                                <style>{`@keyframes dropOut { 0% { transform: translate(-50%, -150px) scale(0.5); } 100% { transform: translate(-50%, 75px) scale(1); } }`}</style>
+                                <div className="absolute top-[95px] left-1/2 -translate-x-1/2 w-16 h-8 border-2 border-yellow-400 rounded-[50%] animate-[ripple_1s_ease-out_2s_forwards] opacity-0"></div>
+                            </>
+                        )}
+                  </div>
+
                   {match.tvSettings.hawkEyeStatus === 'in' ? (
-                      <div className="animate-in zoom-in spin-in-12 duration-700 flex flex-col items-center">
-                          <div className="w-32 h-32 md:w-48 md:h-48 rounded-full bg-green-500/20 border-8 border-green-500 flex items-center justify-center shadow-[0_0_100px_rgba(34,197,94,0.6)] relative">
-                             <div className="w-24 h-24 md:w-36 md:h-36 bg-green-500 rounded-full animate-pulse blur-sm absolute"></div>
-                             <span className="text-6xl md:text-8xl drop-shadow-[0_0_20px_black] relative z-10">✅</span>
-                          </div>
-                          <h1 className="text-6xl md:text-[8rem] font-black text-transparent bg-clip-text bg-gradient-to-b from-green-300 to-green-600 drop-shadow-[0_0_50px_rgba(34,197,94,0.8)] mt-8 pt-4">IN</h1>
-                          <p className="text-green-400 font-bold text-2xl md:text-4xl tracking-[0.5em] mt-2">DENTRO</p>
+                      <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2">
+                          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-green-300 to-green-600 drop-shadow-[0_0_20px_rgba(34,197,94,0.8)] leading-none">IN</h1>
+                          <p className="text-green-400 font-bold text-xs tracking-[0.3em] mt-1">DENTRO</p>
                       </div>
                   ) : (
-                      <div className="animate-in zoom-in spin-in-12 duration-700 flex flex-col items-center">
-                          <div className="w-32 h-32 md:w-48 md:h-48 rounded-full bg-red-600/20 border-8 border-red-600 flex items-center justify-center shadow-[0_0_100px_rgba(220,38,38,0.6)] relative">
-                             <div className="w-24 h-24 md:w-36 md:h-36 bg-red-600 rounded-full animate-[pulse_0.5s_infinite] blur-sm absolute"></div>
-                             <span className="text-6xl md:text-8xl drop-shadow-[0_0_20px_black] relative z-10">❌</span>
-                          </div>
-                          <h1 className="text-6xl md:text-[8rem] font-black text-transparent bg-clip-text bg-gradient-to-b from-red-400 to-red-600 drop-shadow-[0_0_50px_rgba(220,38,38,0.8)] mt-8 pt-4">OUT</h1>
-                          <p className="text-red-400 font-bold text-2xl md:text-4xl tracking-[0.5em] mt-2">FUERA</p>
+                      <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2">
+                          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-red-400 to-red-600 drop-shadow-[0_0_20px_rgba(220,38,38,0.8)] leading-none">OUT</h1>
+                          <p className="text-red-400 font-bold text-xs tracking-[0.3em] mt-1">FUERA</p>
                       </div>
                   )}
               </div>
@@ -858,7 +1023,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* FEATURED PLAYER EFFECT */}
-      {match.tvSettings?.featuredPlayerId && match.tvSettings.featuredPlayerMode && (
+      {match.tvSettings?.featuredPlayerId && match.tvSettings.featuredPlayerMode === 'presentation' && (
           <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in duration-500">
              {(() => {
                  const player = match.rotationA.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
@@ -947,21 +1112,23 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                 {/* Team A Formation */}
                 <div className="relative w-[30vh] h-[30vh] md:w-[45vh] md:h-[45vh]">
                    <div className="absolute -top-12 left-0 right-0 text-center font-black text-white uppercase tracking-widest text-lg md:text-2xl drop-shadow-[0_0_5px_rgba(130,125,255,1)]">{teamA.name}</div>
-                   <div className="w-full h-full bg-orange-500/10 border-4 border-white/40 shadow-2xl skew-x-[-10deg] md:skew-x-[-15deg] grid grid-cols-3 grid-rows-2 p-2 gap-2 relative">
+                   <div className="w-full h-full bg-[#182a47]/80 border border-blue-500/50 shadow-[0_0_50px_rgba(59,130,246,0.3)] origin-bottom rotate-x-[50deg] rounded-lg grid grid-cols-3 grid-rows-2 p-4 gap-4 relative">
                        {/* Attack Line */}
-                       <div className="absolute top-1/3 left-0 right-0 h-1 bg-white/20"></div>
+                       <div className="absolute top-1/3 left-0 right-0 h-1 bg-cyan-400/50 shadow-[0_0_10px_#22d3ee]"></div>
                        {[4,3,2,5,6,1].map((pos, i) => {
                           const player = match.rotationA[pos-1];
+                          const isServing = match.servingTeamId === teamA.id && pos === 1;
                           return (
-                             <div key={pos} className="flex items-center justify-center relative">
+                             <div key={pos} className="flex items-center justify-center relative -rotate-x-[50deg]">
                                 {player ? (
-                                   <div className="flex flex-col items-center animate-in zoom-in" style={{animationDelay: `${i*100}ms`}}>
+                                   <div className={`flex flex-col items-center animate-in zoom-in transition-transform hover:scale-110 ${isServing ? 'animate-[bounce_2s_infinite]' : ''}`} style={{animationDelay: `${i*100}ms`}}>
                                       {player.profile?.photoUrl ? (
-                                         <img src={player.profile.photoUrl} className="w-10 h-10 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#827DFF] shadow-[0_0_10px_#827DFF]" />
+                                         <img src={player.profile.photoUrl} className="w-12 h-12 md:w-20 md:h-20 rounded-full object-cover border-2 border-[#827DFF] shadow-[0_10px_20px_rgba(0,0,0,0.5)]" />
                                       ) : (
-                                         <div className="w-10 h-10 md:w-16 md:h-16 rounded-full bg-slate-800 border-2 border-[#827DFF] flex items-center justify-center text-white font-black text-lg shadow-[0_0_10px_#827DFF]">{player.number}</div>
+                                         <div className="w-12 h-12 md:w-20 md:h-20 rounded-full bg-[#18233f] border-2 border-[#827DFF] flex items-center justify-center text-white font-black text-xl shadow-[0_10px_20px_rgba(0,0,0,0.5)]">{player.number}</div>
                                       )}
-                                      <span className="text-[8px] md:text-xs text-white font-bold bg-black/60 px-1 rounded mt-1 truncate max-w-[60px]">{player.name.split(' ')[0]}</span>
+                                      <span className="text-[10px] md:text-xs text-blue-100 font-bold bg-black/80 px-2 py-0.5 rounded mt-2 truncate max-w-[80px] shadow-lg border border-white/10 uppercase tracking-widest">{player.name.split(' ')[0]}</span>
+                                      {isServing && <span className="absolute -bottom-4 bg-black/80 text-yellow-400 border border-yellow-400 px-2 rounded-full text-[8px] font-black tracking-widest mt-1">SAQUE</span>}
                                    </div>
                                 ) : <div className="text-white/20 text-[8px] font-bold">POS {pos}</div>}
                              </div>
@@ -972,30 +1139,30 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                 
                 {/* VS Center */}
                 {!isVertical && (
-                   <div className="flex flex-col justify-center items-center">
-                     <div className="text-3xl text-white/50 font-black italic border-y-2 border-white/20 py-2">VS</div>
-                   </div>
+                   <div className="w-1 md:w-2 bg-white/20 rounded-full h-[60%] self-center blur-[1px]"></div>
                 )}
 
                 {/* Team B Formation */}
                 <div className="relative w-[30vh] h-[30vh] md:w-[45vh] md:h-[45vh]">
-                   <div className={`absolute ${isVertical?'-top-12':'top-[105%]'} left-0 right-0 text-center font-black text-white uppercase tracking-widest text-lg md:text-2xl drop-shadow-[0_0_5px_rgba(76,139,255,1)]`}>{teamB.name}</div>
-                   <div className="w-full h-full bg-orange-500/10 border-4 border-white/40 shadow-2xl skew-x-[-10deg] md:skew-x-[-15deg] grid grid-cols-3 grid-rows-2 p-2 gap-2 relative">
+                   <div className={`absolute ${isVertical?'-top-12':'-top-12'} left-0 right-0 text-center font-black text-white uppercase tracking-widest text-lg md:text-2xl drop-shadow-[0_0_5px_rgba(76,139,255,1)]`}>{teamB.name}</div>
+                   <div className="w-full h-full bg-[#3b1717]/80 border border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.3)] origin-bottom rotate-x-[50deg] rounded-lg grid grid-cols-3 grid-rows-2 p-4 gap-4 relative">
                        {/* Attack Line */}
-                       <div className="absolute bottom-1/3 left-0 right-0 h-1 bg-white/20"></div>
+                       <div className="absolute bottom-1/3 left-0 right-0 h-1 bg-rose-400/50 shadow-[0_0_10px_#fb7185]"></div>
                        {/* Note: reversed side for Team B so the net is in the middle logically if placed side by side */}
                        {[2,3,4,1,6,5].map((pos, i) => {
                           const player = match.rotationB[pos-1];
+                          const isServing = match.servingTeamId === teamB.id && pos === 1;
                           return (
-                             <div key={pos} className="flex items-center justify-center relative">
+                             <div key={pos} className="flex items-center justify-center relative -rotate-x-[50deg]">
                                 {player ? (
-                                   <div className="flex flex-col items-center animate-in zoom-in" style={{animationDelay: `${i*100}ms`}}>
+                                   <div className={`flex flex-col items-center animate-in zoom-in transition-transform hover:scale-110 ${isServing ? 'animate-[bounce_2s_infinite]' : ''}`} style={{animationDelay: `${i*100}ms`}}>
                                       {player.profile?.photoUrl ? (
-                                         <img src={player.profile.photoUrl} className="w-10 h-10 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#4C8BFF] shadow-[0_0_10px_#4C8BFF]" />
+                                         <img src={player.profile.photoUrl} className="w-12 h-12 md:w-20 md:h-20 rounded-full object-cover border-2 border-[#4C8BFF] shadow-[0_10px_20px_rgba(0,0,0,0.5)]" />
                                       ) : (
-                                         <div className="w-10 h-10 md:w-16 md:h-16 rounded-full bg-slate-800 border-2 border-[#4C8BFF] flex items-center justify-center text-white font-black text-lg shadow-[0_0_10px_#4C8BFF]">{player.number}</div>
+                                         <div className="w-12 h-12 md:w-20 md:h-20 rounded-full bg-[#3b1a1a] border-2 border-[#4C8BFF] flex items-center justify-center text-white font-black text-xl shadow-[0_10px_20px_rgba(0,0,0,0.5)]">{player.number}</div>
                                       )}
-                                      <span className="text-[8px] md:text-xs text-white font-bold bg-black/60 px-1 rounded mt-1 truncate max-w-[60px]">{player.name.split(' ')[0]}</span>
+                                      <span className="text-[10px] md:text-xs text-red-100 font-bold bg-black/80 px-2 py-0.5 rounded mt-2 truncate max-w-[80px] shadow-lg border border-white/10 uppercase tracking-widest">{player.name.split(' ')[0]}</span>
+                                      {isServing && <span className="absolute -bottom-4 bg-black/80 text-yellow-400 border border-yellow-400 px-2 rounded-full text-[8px] font-black tracking-widest mt-1">SAQUE</span>}
                                    </div>
                                 ) : <div className="text-white/20 text-[8px] font-bold">POS {pos}</div>}
                              </div>
@@ -1007,104 +1174,111 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
 
-      {/* --- POINT EVOLUTION (TIMEOUT) OVERLAY --- */}
+      {/* --- POINT EVOLUTION (TIMELINE) OVERLAY --- */}
       {match.tvSettings?.showPointEvolution && (
-          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in zoom-in duration-500">
-             <div className="relative w-full max-w-4xl bg-[#0f0f13] border border-white/20 rounded shadow-[0_0_50px_rgba(0,0,0,0.9)] overflow-hidden">
-                 <div className="bg-gradient-to-r from-blue-900 to-red-900 p-4 border-b border-white/20 mb-4 flex justify-between items-center">
-                     <div className="text-white font-black text-2xl italic tracking-tighter">VOLLEYTV</div>
-                     <div className="text-white/80 font-bold uppercase tracking-widest text-sm">Evolución de Puntos - Set {match.currentSet}</div>
-                 </div>
-                 
-                 <div className="px-8 pb-8 flex flex-col gap-4">
-                     {/* Team Names Header */}
-                     <div className="flex w-full items-center">
-                         <div className="flex-1 flex justify-end px-4 gap-4 items-center">
-                            <span className="text-2xl font-black text-white">{teamA.name}</span>
-                            {teamA.logoUrl && <img src={teamA.logoUrl} className="w-10 h-10 object-contain" />}
-                         </div>
-                         <div className="w-[100px] text-center text-slate-500 font-bold uppercase text-[10px] tracking-widest">Score</div>
-                         <div className="flex-1 flex justify-start px-4 gap-4 items-center flex-row-reverse">
-                            <span className="text-2xl font-black text-white">{teamB.name}</span>
-                            {teamB.logoUrl && <img src={teamB.logoUrl} className="w-10 h-10 object-contain" />}
-                         </div>
-                     </div>
+          <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-full max-w-5xl z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in slide-in-from-bottom duration-500">
+             <div className="relative w-full flex items-center justify-center drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+                  {(() => {
+                      const currSet = match.sets[match.currentSet - 1] || { history: [] };
+                      const setHistory = currSet.history || [];
+                      
+                      let runA = 0;
+                      let runB = 0;
+                      const timeline: { a: number, b: number, whoScored: string }[] = [];
+                      
+                      const scoringEvents = setHistory.filter(h => 
+                          h.type === 'attack' || h.type === 'block' || h.type === 'ace' || h.type === 'opponent_error' || h.type === 'red_card'
+                      );
 
-                     {/* Point History Log */}
-                     <div className="flex flex-col gap-1 overflow-y-auto max-h-[50vh] pr-2 custom-scrollbar">
-                         {(() => {
-                             const currSet = match.sets[match.currentSet - 1] || { history: [] };
-                             
-                             // Calculate running score
-                             let runA = 0;
-                             let runB = 0;
-                             
-                             // We only want point-scoring events
-                             const scoringEvents = currSet.history.filter(h => 
-                                 h.type === 'attack' || h.type === 'block' || h.type === 'ace' || h.type === 'opponent_error'
-                             );
+                      scoringEvents.forEach((h) => {
+                          let scorerA = false;
+                          if (h.type === 'opponent_error') {
+                              scorerA = h.teamId !== teamA.id;
+                          } else {
+                              scorerA = h.teamId === teamA.id;
+                          }
+                          if (scorerA) runA++; else runB++;
+                          timeline.push({ a: runA, b: runB, whoScored: scorerA ? teamA.id : teamB.id });
+                      });
 
-                             return scoringEvents.map((h, i) => {
-                                 // Who scored?
-                                 // Opponent error means the OTHER team scored.
-                                 let scorerA = false;
-                                 let scorerB = false;
+                      const maxColumns = 12; 
+                      const reversedDisplay = [...timeline].reverse();
+                      const historyDisplay = reversedDisplay.slice(0, maxColumns);
 
-                                 if (h.type === 'opponent_error') {
-                                     if (h.teamId === teamA.id) { scorerB = true; } // A made error, B scored
-                                     else { scorerA = true; } // B made error, A scored
-                                 } else {
-                                     if (h.teamId === teamA.id) { scorerA = true; }
-                                     else { scorerB = true; }
-                                 }
+                      return (
+                          <div className="flex flex-col rounded overflow-hidden shadow-2xl relative w-full border-2 border-white/10">
+                              <div className="flex h-12 md:h-16 text-white bg-gradient-to-r from-[#82193b] to-[#400e23] border-b border-white/20">
+                                  <div className="w-48 flex items-center justify-between px-4 shrink-0">
+                                      <div className="w-10 h-6 bg-white flex items-center justify-center overflow-hidden">
+                                          {teamA.logoUrl ? <img src={teamA.logoUrl} className="object-cover w-full h-full" /> : <div className="text-black font-black text-[10px]">{teamA.name.substring(0,3)}</div>}
+                                      </div>
+                                      <span className="font-black text-3xl italic tracking-tighter drop-shadow-md">{teamA.name.substring(0,3).toUpperCase()}</span>
+                                  </div>
+                                  <div className="w-16 md:w-20 bg-[#1c38fa] flex items-center justify-center text-3xl md:text-5xl font-black tabular-nums border-x border-white/20 shrink-0 shadow-2xl z-20">
+                                      {match.scoreA}
+                                  </div>
+                                  {historyDisplay.map((pointState, i) => (
+                                      <div key={i} className={`flex-1 flex items-center justify-center border-r border-[#ffffff15] text-xl md:text-3xl font-black text-white/90 ${pointState.whoScored === teamA.id ? 'bg-[#ffffff10]' : ''}`}>
+                                          {pointState.whoScored === teamA.id ? pointState.a : ''}
+                                      </div>
+                                  ))}
+                                  {/* Fill empty columns if needed */}
+                                  {Array.from({length: Math.max(0, maxColumns - historyDisplay.length)}).map((_, i) => (
+                                      <div key={'e'+i} className="flex-1 flex items-center justify-center border-r border-[#ffffff15]"></div>
+                                  ))}
+                              </div>
 
-                                 if (scorerA) runA++;
-                                 if (scorerB) runB++;
-
-                                 // Optional: Who made the action?
-                                 const pA = scorerA && h.type !== 'opponent_error' ? teamA.players.find(p=>p.id===h.playerId) : null;
-                                 const pB = scorerB && h.type !== 'opponent_error' ? teamB.players.find(p=>p.id===h.playerId) : null;
-
-                                 const typeIcon = h.type === 'attack' ? '💥' : h.type === 'block' ? '🧱' : h.type === 'ace' ? '🎯' : '❌';
-
-                                 return (
-                                     <div key={i} className="flex w-full items-center bg-white/5 rounded py-2">
-                                         {/* Team A Side */}
-                                         <div className="flex-1 flex justify-end px-4 gap-2 items-center">
-                                             {scorerA && (
-                                                 <>
-                                                     <span className="text-white/50 text-xs italic">{pA ? `#${pA.number} ${pA.name}` : h.type === 'opponent_error' ? 'Error Rival' : ''}</span>
-                                                     <span className="text-lg">{typeIcon}</span>
-                                                 </>
-                                             )}
-                                         </div>
-                                         
-                                         {/* Center Score */}
-                                         <div className="w-[100px] flex justify-center items-center gap-2 font-black text-2xl">
-                                             <span className={scorerA ? 'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.8)]' : 'text-slate-600'}>{runA}</span>
-                                             <span className="text-slate-600">-</span>
-                                             <span className={scorerB ? 'text-red-400 drop-shadow-[0_0_10px_rgba(248,113,113,0.8)]' : 'text-slate-600'}>{runB}</span>
-                                         </div>
-
-                                         {/* Team B Side */}
-                                         <div className="flex-1 flex justify-start px-4 gap-2 items-center text-left">
-                                             {scorerB && (
-                                                 <>
-                                                     <span className="text-lg">{typeIcon}</span>
-                                                     <span className="text-white/50 text-xs italic">{pB ? `#${pB.number} ${pB.name}` : h.type === 'opponent_error' ? 'Error Rival' : ''}</span>
-                                                 </>
-                                             )}
-                                         </div>
-                                     </div>
-                                 );
-                             });
-                         })()}
-                         
-                     </div>
-                 </div>
+                              <div className="flex h-12 md:h-16 text-white bg-gradient-to-r from-[#100742] to-[#0a0521]">
+                                  <div className="w-48 flex items-center justify-between px-4 shrink-0">
+                                      <div className="w-10 h-6 bg-white flex items-center justify-center overflow-hidden">
+                                          {teamB.logoUrl ? <img src={teamB.logoUrl} className="object-cover w-full h-full" /> : <div className="text-black font-black text-[10px]">{teamB.name.substring(0,3)}</div>}
+                                      </div>
+                                      <span className="font-black text-3xl italic tracking-tighter drop-shadow-md">{teamB.name.substring(0,3).toUpperCase()}</span>
+                                  </div>
+                                  <div className="w-16 md:w-20 bg-[#1c38fa] flex items-center justify-center text-3xl md:text-5xl font-black tabular-nums border-x border-white/20 shrink-0 shadow-2xl z-20">
+                                      {match.scoreB}
+                                  </div>
+                                  {historyDisplay.map((pointState, i) => (
+                                      <div key={i} className={`flex-1 flex items-center justify-center border-r border-[#ffffff15] text-xl md:text-3xl font-black text-white/90 ${pointState.whoScored === teamB.id ? 'bg-[#ffffff10]' : ''}`}>
+                                          {pointState.whoScored === teamB.id ? pointState.b : ''}
+                                      </div>
+                                  ))}
+                                  {Array.from({length: Math.max(0, maxColumns - historyDisplay.length)}).map((_, i) => (
+                                      <div key={'e'+i} className="flex-1 flex items-center justify-center border-r border-[#ffffff15]"></div>
+                                  ))}
+                              </div>
+                          </div>
+                      );
+                  })()}
              </div>
           </div>
       )}
+      {/* SERVE SPEED OVERLAY */}
+      {match.tvSettings?.showServeSpeed && (
+          <div className="fixed bottom-32 right-12 z-40 animate-in slide-in-from-right fade-in pointer-events-none">
+              <div className="bg-gradient-to-br from-black/80 to-slate-900 border border-emerald-500/30 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] p-4 w-64 backdrop-blur-md">
+                  <div className="flex justify-between items-center mb-4">
+                      <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Saque</span>
+                      <span className="text-[10px] font-bold text-white/50">{teamA.players[0]?.name.split(' ')[0] || 'Jugador'}</span>
+                  </div>
+                  <div className="flex items-end gap-2 mb-2">
+                      <span className="text-5xl font-black text-white italic drop-shadow-md tracking-tighter">
+                          104
+                      </span>
+                      <span className="text-emerald-400 font-bold mb-1">km/h</span>
+                  </div>
+                  {/* Dial / Bar Graph */}
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-3 relative">
+                      <div className="absolute top-0 left-0 h-full w-[85%] bg-gradient-to-r from-emerald-500 to-yellow-400"></div>
+                  </div>
+                  <div className="flex justify-between mt-1 text-[8px] font-bold text-slate-500">
+                      <span>0</span>
+                      <span>MAX 120+</span>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {match.tvSettings?.showSetStatsExt && (
           <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
              <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
@@ -1139,8 +1313,9 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                          {(() => {
                              // Calculation of current set stats
                              const currSet = match.sets[match.currentSet - 1] || { history: [] };
-                             const actsA = currSet.history.filter(h=>h.teamId===teamA.id);
-                             const actsB = currSet.history.filter(h=>h.teamId===teamB.id);
+                             const setHistory = currSet.history || [];
+                             const actsA = setHistory.filter(h=>h.teamId===teamA.id);
+                             const actsB = setHistory.filter(h=>h.teamId===teamB.id);
 
                              const ptsA = match.scoreA;
                              const ptsB = match.scoreB;
@@ -1196,126 +1371,223 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
 
-      {/* --- EXTENDED TOP PLAYERS OVERLAY --- */}
-      {match.tvSettings?.showTopPlayersExt && (
-          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in slide-in-from-bottom duration-500">
-             <div className="relative flex flex-col items-center w-full max-w-5xl">
-                 {/* HEADING GROUP */}
-                 <div className="flex flex-col items-center mb-6 drop-shadow-xl">
-                     <h2 className="text-7xl font-black text-white italic tracking-tighter uppercase">TOP PLAYERS</h2>
-                     <span className="text-white font-bold tracking-[0.3em] text-sm mt-1">SET {match.currentSet}</span>
-                 </div>
-                 {/* PLAYERS CARD */}
-                 {(()=>{
-                     // Get best players from current set
-                     const currSet = match.sets[match.currentSet - 1] || { history: [] };
-                     const scoresA:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
-                     const scoresB:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
-                     
-                     // Helper
-                     teamA.players.forEach(p => scoresA[p.id] = {pts:0, att:0, blk:0, srv:0, attTot:0 });
-                     teamB.players.forEach(p => scoresB[p.id] = {pts:0, att:0, blk:0, srv:0, attTot:0 });
-
-                     currSet.history.forEach(h => {
-                         if(h.playerId) {
-                             let sc = h.teamId === teamA.id ? scoresA[h.playerId] : scoresB[h.playerId];
-                             if(sc) {
-                                 if(['attack','block','ace'].includes(h.type)) sc.pts++;
-                                 if(h.type==='attack') { sc.att++; sc.attTot++; }
-                                 // Opponent errors aren't directly linked to a specific player's attack error in this lightweight data model.
-                                 // We'll just use successful attacks for efficiency for now.
-                                 if(h.type==='block') sc.blk++;
-                                 if(h.type==='ace') sc.srv++;
-                             }
-                         }
-                     });
-
-                     let bestAId = teamA.players[0]?.id; let maxA = -1;
-                     Object.entries(scoresA).forEach(([id, st]) => { if(st.pts > maxA) { maxA=st.pts; bestAId=id; }});
-                     let bestBId = teamB.players[0]?.id; let maxB = -1;
-                     Object.entries(scoresB).forEach(([id, st]) => { if(st.pts > maxB) { maxB=st.pts; bestBId=id; }});
-
-                     const pA = teamA.players.find(p=>p.id===bestAId);
-                     const pB = teamB.players.find(p=>p.id===bestBId);
-                     const stA = scoresA[bestAId] || {pts:0,att:0,blk:0,srv:0,attTot:1};
-                     const stB = scoresB[bestBId] || {pts:0,att:0,blk:0,srv:0,attTot:1};
-
-                     if(!pA || !pB) return null;
-
-                     const effA = stA.attTot > 0 ? Math.round((stA.att/stA.attTot)*100) : 0;
-                     const effB = stB.attTot > 0 ? Math.round((stB.att/stB.attTot)*100) : 0;
-
-                     const rows = [
-                         { label: 'ROLE', l: pA.role, r: pB.role },
-                         { label: 'AGE', l: pA.profile?.birthDate ? (new Date().getFullYear() - new Date(pA.profile.birthDate).getFullYear()) : '-', r: pB.profile?.birthDate ? (new Date().getFullYear() - new Date(pB.profile.birthDate).getFullYear()) : '-' },
-                         { label: 'HEIGHT', l: pA.profile?.height ? pA.profile.height+' cm' : '-', r: pB.profile?.height ? pB.profile.height+' cm' : '-' },
-                         { label: 'TOTAL POINTS', l: stA.pts, r: stB.pts },
-                         { label: 'EFFICIENCY', l: effA+'%', r: effB+'%' },
-                         { label: 'ATTACKS IN', l: stA.att, r: stB.att },
-                         { label: 'BLOCKS', l: stA.blk, r: stB.blk },
-                         { label: 'SERVES', l: stA.srv, r: stB.srv },
-                     ];
-
-                     return (
-                     <div className="flex w-full items-end justify-center h-[50vh]">
-                         {/* LEFT PLAYER */}
-                         <div className="w-[30%] h-[120%] relative flex justify-center">
-                             {pA.profile?.photoUrl ? (
-                                <img src={pA.profile.photoUrl} className="absolute bottom-0 h-full object-contain mb-8 z-20 drop-shadow-2xl translate-x-12"/>
-                             ) : (
-                                <div className="absolute bottom-0 h-[80%] aspect-square bg-blue-900 rounded-full mb-8 z-20 shadow-2xl flex items-center justify-center text-7xl font-black text-white">{pA.number}</div>
-                             )}
-                             <div className="absolute bottom-0 text-white font-black italic text-4xl bg-[#4C8BFF] px-6 py-2 rounded-t z-30 shadow-2xl flex items-center gap-2 pr-12 translate-x-4">
-                                <span>{pA.role} {pA.number}</span>
-                                <div className="text-3xl ml-2 drop-shadow-md">{pA.name.split(' ')[0]}</div>
-                             </div>
+      {/* WIN PREDICTION */}
+      {match.tvSettings?.showWinPrediction && (
+          <div className="absolute bottom-8 right-8 z-40 flex flex-col pointer-events-none items-center justify-center bg-transparent animate-in slide-in-from-right duration-500 w-[300px]">
+              <div className="relative w-full bg-[#0f0b29]/95 border-l-[4px] border-[#4C8BFF] rounded-lg overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-md">
+                 <div className="flex flex-col relative w-full pt-3">
+                     <div className="text-center w-full text-white font-bold tracking-[0.2em] text-xs mb-2">WIN PREDICTION</div>
+                     <div className="flex px-4 h-24 relative w-full border-t border-b border-white/20 items-center">
+                         {/* X Axis */}
+                         <div className="absolute left-4 right-16 bottom-2 flex justify-between items-end px-2 text-white/50 font-bold text-[8px]">
+                             {match.sets.map((_, idx) => <div key={idx}>S{idx+1}</div>)}
+                             <div>S{match.sets.length + 1}</div>
                          </div>
-                         {/* STATS BOARD */}
-                         <div className="w-[50%] bg-gradient-to-br from-[#1b143c] to-[#0e0c1f] rounded-t-xl overflow-hidden shadow-[0_-10px_40px_rgba(0,0,0,0.8)] border border-white/10 z-10 relative flex flex-col">
-                             {/* FLAGS HEADER */}
-                             <div className="flex justify-between items-center py-2 px-8 bg-black/40">
-                                 <div className="w-12 h-6 border bg-white flex items-center justify-center overflow-hidden">
-                                     {teamA.logoUrl ? <img src={teamA.logoUrl} className="object-cover h-full w-full"/> : teamA.name.substring(0,3)}
+
+                         {/* Simplified Fake Chart Lines */}
+                         {(() => {
+                             return (
+                                 <div className="absolute inset-0 right-16 left-4 top-2 bottom-6 flex items-center">
+                                    <svg className="w-full h-full" overflow="visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                        <polyline 
+                                            points="0,30 33,40 66,35 100,50" 
+                                            fill="none" stroke="#22c55e" strokeWidth="3" 
+                                        />
+                                        <polyline 
+                                            points="0,70 33,60 66,65 100,50" 
+                                            fill="none" stroke="#ef4444" strokeWidth="3" 
+                                        />
+                                        <circle cx="100" cy="50" r="4" fill="#22c55e" />
+                                        <circle cx="100" cy="50" r="4" fill="#ef4444" />
+                                    </svg>
                                  </div>
-                                 <div className="w-12 h-6 border bg-white flex items-center justify-center overflow-hidden">
-                                     {teamB.logoUrl ? <img src={teamB.logoUrl} className="object-cover h-full w-full"/> : teamB.name.substring(0,3)}
-                                 </div>
-                             </div>
-                             {/* ROWS */}
-                             <div className="flex flex-col py-4 gap-1">
-                                 {rows.map((r, i) => (
-                                     <div key={i} className="flex font-black text-lg h-9">
-                                         <div className="flex-1 bg-gradient-to-r from-[#170a4a] to-[#251bc2] flex items-center justify-start px-6 text-white drop-shadow-md">
-                                             {r.l}
-                                         </div>
-                                         <div className="w-1/3 bg-[#3f3178]/20 flex items-center justify-center text-[#c2bdf0] tracking-widest text-sm font-bold">
-                                             {r.label}
-                                         </div>
-                                         <div className="flex-1 bg-gradient-to-l from-[#4a0a1a] to-[#c21b44] flex items-center justify-end px-6 text-white drop-shadow-md">
-                                             {r.r}
-                                         </div>
+                             )
+                         })()}
+
+                         {/* Right Text */}
+                         {(() => {
+                             const diffPoints = match.scoreA - match.scoreB;
+                             const baseA = 50 + diffPoints * 2;
+                             const probA = Math.max(10, Math.min(90, baseA));
+                             const probB = 100 - probA;
+                             
+                             const winnerProb = Math.max(probA, probB);
+                             const loserProb = Math.min(probA, probB);
+                             const winnerName = probA >= probB ? teamA.name.substring(0,3).toUpperCase() : teamB.name.substring(0,3).toUpperCase();
+                             return (
+                                 <div className="absolute right-2 top-0 bottom-0 py-2 flex flex-col justify-between font-black text-white text-lg">
+                                     <div className="text-right leading-none mt-1">
+                                         {winnerProb}<span className="text-[10px]">%</span><br/>
+                                         <span className="text-[8px] font-bold opacity-80">{winnerName}</span>
                                      </div>
-                                 ))}
-                             </div>
+                                     <div className="text-right leading-none mb-1">
+                                         {loserProb}<span className="text-[10px]">%</span>
+                                     </div>
+                                 </div>
+                             )
+                         })()}
+                     </div>
+
+                     <div className="flex justify-between w-full font-black text-lg italic tracking-tighter pt-2 pb-1">
+                         <div className="flex-1 text-center bg-gradient-to-r from-transparent to-red-500/20 text-white drop-shadow-md">
+                             {teamA.name.substring(0,3).toUpperCase()}
                          </div>
-                         {/* RIGHT PLAYER */}
-                         <div className="w-[30%] h-[120%] relative flex justify-center">
-                             {pB.profile?.photoUrl ? (
-                                <img src={pB.profile.photoUrl} className="absolute bottom-0 h-[105%] object-contain mb-8 z-20 drop-shadow-2xl -translate-x-12 transform scale-x-[-1]"/>
-                             ) : (
-                                <div className="absolute bottom-0 h-[80%] aspect-square bg-red-900 rounded-full mb-8 z-20 shadow-2xl flex items-center justify-center text-7xl font-black text-white -translate-x-4">{pB.number}</div>
-                             )}
-                             <div className="absolute bottom-0 text-[#140b2b] font-black italic text-4xl bg-yellow-400 px-6 py-2 rounded-t z-30 shadow-2xl flex items-center gap-2 pl-12 -translate-x-4">
-                                <div className="text-3xl mr-2 drop-shadow-md">{pB.name.split(' ')[0]}</div>
-                                <span>{pB.role} {pB.number}</span>
-                             </div>
+                         <div className="flex-1 text-center bg-gradient-to-l from-transparent to-emerald-500/20 text-white drop-shadow-md">
+                             {teamB.name.substring(0,3).toUpperCase()}
                          </div>
                      </div>
-                     );
-                 })()}
+                     <div className="w-full flex h-1">
+                         <div className="flex-1 bg-red-400"></div>
+                         <div className="flex-1 bg-emerald-500"></div>
+                     </div>
+                 </div>
+              </div>
+          </div>
+      )}
+
+      {/* RECEIVER ACCURACY / SERVE ERRORS */}
+      {match.tvSettings?.showReceiverAccuracy && (
+          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-end pb-32 animate-in slide-in-from-bottom fade-in duration-700">
+              <div className="relative border-b-4 border-slate-300 w-full max-w-5xl h-80 bg-[#b29f8a] border-4 border-white shadow-[0_20px_50px_rgba(0,0,0,0.8)] perspective-1000 transform rotate-x-[20deg] flex flex-col items-center overflow-hidden">
+                 {/* Court lines */}
+                 <div className="absolute inset-4 border-2 border-white"></div>
+                 <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 w-full h-1 bg-white z-10 shadow-[0_5px_15px_rgba(0,0,0,0.5)]"></div>
+                 <div className="absolute inset-x-4 top-[33%] w-[calc(100%-2rem)] h-1 bg-white/50"></div>
+                 <div className="absolute inset-x-4 top-[66%] w-[calc(100%-2rem)] h-1 bg-white/50"></div>
+                 <div className="absolute text-[8rem] font-black text-rose-500/20 italic tracking-tighter top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">VOLLEYTV</div>
+                 
+                 {/* 3D Balls (Fake positions for representation, as we don't track XY currently) */}
+                 <div className="absolute inset-0">
+                     <div className="absolute top-[20%] left-[30%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[25%] left-[40%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[35%] left-[55%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[55%] left-[65%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[50%] left-[45%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[60%] left-[50%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[65%] left-[35%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[80%] left-[45%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                     <div className="absolute top-[40%] left-[80%] w-3 h-3 bg-yellow-400 rounded-full shadow-lg border border-yellow-600"></div>
+                 </div>
+
+                 {/* Zone Overlays */}
+                 <div className="absolute top-[10%] right-10 bg-[#302766] text-white font-bold px-4 py-1 flex items-center gap-2 border border-blue-400/50 shadow-xl">
+                     <span className="text-sm">Outer Zone</span> <span className="text-xl font-black">15%</span>
+                 </div>
+                 <div className="absolute top-[35%] right-10 bg-[#302766] text-white font-bold px-4 py-1 flex items-center gap-2 border border-blue-400/50 shadow-xl">
+                     <span className="text-sm">Mid Zone</span> <span className="text-xl font-black">38%</span>
+                 </div>
+                 <div className="absolute top-[60%] right-10 bg-[#302766] text-white font-bold px-4 py-1 flex items-center gap-2 border border-blue-400/50 shadow-xl">
+                     <span className="text-sm">Target Zone</span> <span className="text-xl font-black">47%</span>
+                 </div>
+              </div>
+
+              {/* Bottom Label Bar */}
+              <div className="relative mt-2 flex bg-indigo-900 shadow-2xl h-12 w-full max-w-4xl text-white font-black items-center overflow-hidden">
+                   <div className="flex bg-[#302766] h-full items-center px-6 gap-4">
+                       {teamA.logoUrl ? <img src={teamA.logoUrl} className="h-8"/> : <span className="text-2xl">{teamA.name.substring(0,3).toUpperCase()}</span>}
+                   </div>
+                   <div className="flex-1 text-center bg-transparent items-center justify-center flex flex-col">
+                       <span className="text-sm tracking-widest leading-none mt-1">RECEIVER ACCURACY</span>
+                       <span className="text-[10px] text-white/50 tracking-widest leading-none mt-1">SECOND CONTACT</span>
+                   </div>
+                   <div className="bg-pink-600 h-full w-20 flex items-center justify-center flex-col text-sm tracking-widest leading-none">
+                       SET {match.currentSet}
+                   </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- MATCH STATISTICS OVERLAY --- */}
+      {match.tvSettings?.showMatchStatsExt && (
+          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
+             <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
+                 <div className="flex flex-col pt-6 pb-2 relative">
+                     <div className="absolute top-2 left-4 text-[#827DFF] font-black italic text-xl opacity-50 tracking-tighter">VOLLEYTV</div>
+                     <div className="text-center w-full text-white/70 font-black tracking-[0.3em] text-sm mb-4">MATCH STATISTICS</div>
+                     {/* Teams and Score Header */}
+                     <div className="flex items-center justify-between px-16 mb-8">
+                         <div className="flex items-center gap-6">
+                            <div className="w-16 h-10 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center">
+                                {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black">{teamA.name.substring(0,3).toUpperCase()}</div>}
+                            </div>
+                            <span className="text-6xl font-black text-white italic tracking-tighter drop-shadow-lg">{teamA.name.substring(0,3).toUpperCase()}</span>
+                         </div>
+                         <div className="text-5xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">
+                             {match.sets.filter(s=>s.scoreA > s.scoreB).length} - {match.sets.filter(s=>s.scoreB > s.scoreA).length}
+                         </div>
+                         <div className="flex items-center gap-6 text-right flex-row-reverse">
+                            <div className="w-16 h-10 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center">
+                                {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black">{teamB.name.substring(0,3).toUpperCase()}</div>}
+                            </div>
+                            <span className="text-6xl font-black text-white italic tracking-tighter drop-shadow-lg">{teamB.name.substring(0,3).toUpperCase()}</span>
+                         </div>
+                     </div>
+                     {/* Stats Rows */}
+                     <div className="flex flex-col gap-1.5 px-4 pb-6">
+                         {/* HEADER */}
+                         <div className="flex justify-center items-center text-xs font-black text-white/50 px-[20%] mb-1">
+                             <span>TOTAL MATCH</span>
+                         </div>
+                         {(() => {
+                             // Calculation of ALL sets stats
+                             const allActsA = match.sets.flatMap(s => (s.history || []).filter(h => h.teamId === teamA.id));
+                             const allActsB = match.sets.flatMap(s => (s.history || []).filter(h => h.teamId === teamB.id));
+
+                             const ptsA = match.sets.reduce((sum, s) => sum + s.scoreA, 0);
+                             const ptsB = match.sets.reduce((sum, s) => sum + s.scoreB, 0);
+                             
+                             const attA = allActsA.filter(h=>h.type==='attack').length;
+                             const attB = allActsB.filter(h=>h.type==='attack').length;
+
+                             const blkA = allActsA.filter(h=>h.type==='block').length;
+                             const blkB = allActsB.filter(h=>h.type==='block').length;
+
+                             const srvA = allActsA.filter(h=>h.type==='ace').length;
+                             const srvB = allActsB.filter(h=>h.type==='ace').length;
+
+                             const errOPA = allActsB.filter(h=>h.type==='opponent_error').length; // points for A due to B's error
+                             const errOPB = allActsA.filter(h=>h.type==='opponent_error').length; // points for B due to A's error
+
+                             const rows = [
+                                 { label: 'TOTAL POINTS', l: ptsA, r: ptsB, max: Math.max(ptsA, ptsB) || 75 },
+                                 { label: 'ATTACKS', l: attA, r: attB, max: Math.max(attA, attB) || 45 },
+                                 { label: 'BLOCKS', l: blkA, r: blkB, max: Math.max(blkA, blkB) || 15 },
+                                 { label: 'SERVES', l: srvA, r: srvB, max: Math.max(srvA, srvB) || 15 },
+                                 { label: 'OPPONENT ERRORS', l: errOPA, r: errOPB, max: Math.max(errOPA, errOPB) || 30 },
+                             ];
+
+                             return rows.map((r, idx) => {
+                                 const total = r.l + r.r;
+                                 const pctL = total > 0 ? Math.round((r.l / total) * 100) : 0;
+                                 const pctR = total > 0 ? Math.round((r.r / total) * 100) : 0;
+                                 
+                                 return (
+                                 <div key={idx} className="flex justify-center items-center w-full">
+                                     <div className="flex-1 flex justify-end items-center px-4 relative h-8">
+                                         <div className="absolute top-1/2 -translate-y-1/2 right-0 h-4 bg-gradient-to-r from-transparent to-blue-600 z-0" style={{ width: `${(r.l / Math.max(1, r.max)) * 100}%`}}></div>
+                                         <span className="relative z-10 text-white font-black text-lg bg-[#302766] px-3 py-0.5 rounded shadow-lg flex items-center gap-2">
+                                            {r.l} <span className="text-[10px] text-blue-300 opacity-70">({pctL}%)</span>
+                                         </span>
+                                     </div>
+                                     <div className="w-1/4 text-center text-white/80 font-black tracking-widest text-sm bg-black/20 py-1">
+                                         {r.label}
+                                     </div>
+                                     <div className="flex-1 flex justify-start items-center px-4 relative h-8">
+                                         <div className="absolute top-1/2 -translate-y-1/2 left-0 h-4 bg-gradient-to-l from-transparent to-red-600 z-0" style={{ width: `${(r.r / Math.max(1, r.max)) * 100}%`}}></div>
+                                         <span className="relative z-10 text-white font-black text-lg bg-[#66273c] px-3 py-0.5 rounded shadow-lg flex items-center gap-2 flex-row-reverse">
+                                            {r.r} <span className="text-[10px] text-red-300 opacity-70">({pctR}%)</span>
+                                         </span>
+                                     </div>
+                                 </div>
+                             )});
+                         })()}
+                     </div>
+                 </div>
              </div>
           </div>
       )}
+
+
 
       {/* --- MATCH FINISHED SUMMARY --- */}
       {matchEnded && winner ? (
@@ -1353,7 +1625,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
             <div className={`relative z-10 transition-all duration-300
                 ${isVertical 
                     ? 'absolute top-0 left-0 h-full w-32 md:w-40 flex items-center justify-center pointer-events-none' 
-                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-[60%] md:w-[70%] max-w-4xl pointer-events-none scale-90 md:scale-100 flex justify-center origin-bottom'
+                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 md:px-0 pointer-events-none scale-90 md:scale-100 flex justify-center origin-bottom'
                 }
             `}
             style={(boardAnim === 'in' || boardAnim === 'out') ? {
@@ -1377,21 +1649,32 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                     
                     {/* Set Point / Match Point Banner */}
                     {pointBanner && (
-                        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 px-6 py-1 rounded-b-lg font-black text-white text-[10px] md:text-sm tracking-widest animate-in fade-in slide-in-from-top-2 flex gap-2 items-center" style={{ backgroundColor: pointBanner.color }}>
-                            <span className="relative z-10">{pointBanner.text}</span>
+                        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+                             <div className="w-full h-40 bg-gradient-to-r from-transparent via-[#0f111a]/90 to-transparent flex flex-col items-center justify-center animate-in zoom-in slide-in-from-bottom-10 border-y-2" style={{ borderColor: pointBanner.color }}>
+                                 <h1 className="text-6xl md:text-8xl font-black text-white italic tracking-[0.2em] uppercase drop-shadow-[0_0_30px_rgba(255,255,255,0.8)]" style={{ textShadow: `0 0 20px ${pointBanner.color}, 0 0 40px ${pointBanner.color}` }}>
+                                     {pointBanner.text}
+                                 </h1>
+                                 <div className="mt-2 text-white/80 font-bold uppercase tracking-widest text-lg md:text-2xl animate-pulse">
+                                     {pointBanner.text === 'MATCH POINT' ? 'PUNTO DE PARTIDO' : 'PUNTO DE SET'}
+                                 </div>
+                             </div>
                         </div>
                     )}
 
                     {/* Left Attachment (Team A Stats) */}
-                    {(match.tvSettings?.showTeamStats || match.tvSettings?.showPlayerStats) && !isVertical && (
+                    {(match.tvSettings?.showTeamStats === teamA.id || match.tvSettings?.showPlayerStats || (match.tvSettings?.featuredPlayerMode === 'stats' && teamA.players.some(p => p.id === match.tvSettings?.featuredPlayerId))) && !isVertical && (
                         <div className="absolute top-1/2 -translate-y-1/2 right-[100%] pr-2 h-[80%] flex animate-in slide-in-from-right fade-in pointer-events-none">
                              <div className="h-full bg-gradient-to-r from-transparent to-[#181d2e] rounded-l-full border-y border-l border-white/10 shadow-2xl flex items-center pr-4 pl-8 gap-3">
                                   <div className="flex flex-col items-end">
                                       <span className="text-[7px] md:text-[9px] font-black text-white/50 uppercase tracking-[0.2em] leading-none">
-                                          {match.tvSettings?.showTeamStats ? 'Ataque Efectividad' : 'Top Anotador'}
+                                          {match.tvSettings?.showTeamStats === teamA.id ? 'Ataque Efectividad' : (match.tvSettings?.featuredPlayerMode === 'stats' ? 'Destacado' : 'Top Anotador')}
                                       </span>
                                       <span className="text-[10px] md:text-sm font-black text-[#827DFF] uppercase tracking-widest leading-none mt-1">
-                                          {match.tvSettings?.showTeamStats ? 'Equipo A' : (()=>{
+                                          {match.tvSettings?.showTeamStats === teamA.id ? 'Equipo A' : (()=>{
+                                              if (match.tvSettings?.featuredPlayerMode === 'stats') {
+                                                  const fp = teamA.players.find(p=>p.id===match.tvSettings?.featuredPlayerId);
+                                                  return fp ? `#${fp.number} ${fp.name.split(' ')[0]}` : '';
+                                              }
                                               let bestPlayer = 'NINGUNO'; let maxPts = 0;
                                               const scores: Record<string, number> = {};
                                               match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
@@ -1408,13 +1691,15 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                        <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                                           <path stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" strokeDasharray="50, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
                                           <path stroke="#827DFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(()=>{
-                                              if(match.tvSettings?.showPlayerStats) {
-                                                  // Points meter (relative to 10 points)
+                                              if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
                                                   let maxPts = 0;
                                                   const scores: Record<string, number> = {};
                                                   match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                       if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                   });
+                                                  if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
+                                                      return Math.min(50, ((scores[match.tvSettings.featuredPlayerId] || 0)/10)*50);
+                                                  }
                                                   Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
                                                   return Math.min(50, (maxPts/10)*50);
                                               } else {
@@ -1427,12 +1712,16 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                           })()}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" className="transition-all duration-1000 ease-out"/>
                                        </svg>
                                        <span className="text-white font-black text-[10px] md:text-sm">{(()=>{
-                                            if(match.tvSettings?.showPlayerStats) {
+                                            if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
                                                 let maxPts = 0;
                                                 const scores: Record<string, number> = {};
                                                 match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                     if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                 });
+                                                if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
+                                                    const fpPts = scores[match.tvSettings.featuredPlayerId] || 0;
+                                                    return fpPts + (fpPts===1?'pt':'pts');
+                                                }
                                                 Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
                                                 return maxPts + (maxPts===1?'pt':'pts');
                                             } else {
@@ -1449,20 +1738,22 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                     )}
 
                     {/* Right Attachment (Team B Stats) */}
-                    {(match.tvSettings?.showTeamStats || match.tvSettings?.showPlayerStats) && !isVertical && (
+                    {(match.tvSettings?.showTeamStats === teamB.id || match.tvSettings?.showPlayerStats || (match.tvSettings?.featuredPlayerMode === 'stats' && teamB.players.some(p => p.id === match.tvSettings?.featuredPlayerId))) && !isVertical && (
                         <div className="absolute top-1/2 -translate-y-1/2 left-[100%] pl-2 h-[80%] flex animate-in slide-in-from-left fade-in pointer-events-none">
                              <div className="h-full bg-gradient-to-l from-transparent to-[#181d2e] rounded-r-full border-y border-r border-white/10 shadow-2xl flex items-center pl-4 pr-8 gap-3">
                                   <div className="relative w-8 h-8 md:w-12 md:h-12 flex items-center justify-center">
                                        <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                                           <path stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" strokeDasharray="50, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
                                           <path stroke="#4C8BFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(()=>{
-                                              if(match.tvSettings?.showPlayerStats) {
-                                                  // Points meter (relative to 10 points)
+                                              if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
                                                   let maxPts = 0;
                                                   const scores: Record<string, number> = {};
                                                   match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                       if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                   });
+                                                  if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
+                                                      return Math.min(50, ((scores[match.tvSettings.featuredPlayerId] || 0)/10)*50);
+                                                  }
                                                   Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
                                                   return Math.min(50, (maxPts/10)*50);
                                               } else {
@@ -1475,12 +1766,16 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                           })()}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" className="transition-all duration-1000 ease-out"/>
                                        </svg>
                                        <span className="text-white font-black text-[10px] md:text-sm">{(()=>{
-                                            if(match.tvSettings?.showPlayerStats) {
+                                            if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
                                                 let maxPts = 0;
                                                 const scores: Record<string, number> = {};
                                                 match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                     if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                 });
+                                                if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
+                                                    const fpPts = scores[match.tvSettings.featuredPlayerId] || 0;
+                                                    return fpPts + (fpPts===1?'pt':'pts');
+                                                }
                                                 Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
                                                 return maxPts + (maxPts===1?'pt':'pts');
                                             } else {
@@ -1494,10 +1789,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                   </div>
                                   <div className="flex flex-col items-start">
                                       <span className="text-[7px] md:text-[9px] font-black text-white/50 uppercase tracking-[0.2em] leading-none">
-                                          {match.tvSettings?.showTeamStats ? 'Ataque Efectividad' : 'Top Anotador'}
+                                          {match.tvSettings?.showTeamStats === teamB.id ? 'Ataque Efectividad' : (match.tvSettings?.featuredPlayerMode === 'stats' ? 'Destacado' : 'Top Anotador')}
                                       </span>
                                       <span className="text-[10px] md:text-sm font-black text-[#4C8BFF] uppercase tracking-widest leading-none mt-1">
-                                          {match.tvSettings?.showTeamStats ? 'Equipo B' : (()=>{
+                                          {match.tvSettings?.showTeamStats === teamB.id ? 'Equipo B' : (()=>{
+                                              if (match.tvSettings?.featuredPlayerMode === 'stats') {
+                                                  const fp = teamB.players.find(p=>p.id===match.tvSettings?.featuredPlayerId);
+                                                  return fp ? `#${fp.number} ${fp.name.split(' ')[0]}` : '';
+                                              }
                                               let bestPlayer = 'NINGUNO'; let maxPts = 0;
                                               const scores: Record<string, number> = {};
                                               match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {

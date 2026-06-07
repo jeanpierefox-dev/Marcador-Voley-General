@@ -82,6 +82,7 @@ export const App: React.FC = () => {
   const [liveMatch, setLiveMatch] = useState<LiveMatchState | null>(null);
   
   // UI States
+  const [swapSides, setSwapSides] = useState(false);
   const [tvMode, setTvMode] = useState(false);
   const [showBracket, setShowBracket] = useState(true);
   const [showStreamGuide, setShowStreamGuide] = useState(false);
@@ -143,6 +144,16 @@ export const App: React.FC = () => {
 
   // Refs to track previous state for auto-opening modal
   const prevMatchStatus = useRef<string | undefined>(undefined);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(e => console.error(e));
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
 
   // --- CLOUD SYNC INITIALIZATION ---
   useEffect(() => {
@@ -1429,11 +1440,15 @@ export const App: React.FC = () => {
                                  {liveMatch.status === 'warmup' ? 'Calentamiento' : liveMatch.status === 'finished_set' ? 'Set Finalizado' : liveMatch.status === 'finished' ? 'Partido Finalizado' : 'En Vivo'}
                              </span>
                          </div>
-                         <div className="flex gap-2">
+                         <div className="flex gap-2 flex-wrap justify-end">
+                             <button onClick={toggleFullScreen} className="bg-white/5 hover:bg-white/10 text-slate-300 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 focus:ring-2 focus:ring-vnl-accent/50 outline-none hidden md:block">Pantalla Completa</button>
+                             <button onClick={() => setSwapSides(!swapSides)} className="bg-white/5 hover:bg-white/10 text-slate-300 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 focus:ring-2 focus:ring-vnl-accent/50 outline-none">Cambiar Lado</button>
                              {canControlMatch && (
                                  <>
-                                    <button onClick={openEditRules} className="bg-white/5 hover:bg-white/10 text-slate-300 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10">Reglas</button>
-                                    <button onClick={handleOpenMvpSelection} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-500/20 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest">Terminar</button>
+                                    <button onClick={() => setTvMode(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest shadow focus:ring-2 focus:ring-blue-400 outline-none">Vista TV 📺</button>
+                                    <button onClick={openEditRules} className="bg-white/5 hover:bg-white/10 text-slate-300 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-white/10 focus:ring-2 focus:ring-vnl-accent/50 outline-none">Reglas</button>
+                                    {liveMatch.status === 'playing' && <button onClick={() => {if(confirm('¿Terminar Set actual manualmente?')) handleSetOperation('FINISH', liveMatch.currentSet - 1)}} className="bg-orange-900/20 hover:bg-orange-900/40 text-orange-400 border border-orange-500/20 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest focus:ring-2 focus:ring-orange-500 outline-none">Terminar Set</button>}
+                                    <button onClick={handleOpenMvpSelection} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-500/20 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest focus:ring-2 focus:ring-red-500 outline-none">Terminar Partido</button>
                                  </>
                              )}
                              {currentUser.role === 'REFEREE' && (
@@ -1450,23 +1465,23 @@ export const App: React.FC = () => {
                         {/* 1. Scoreboard (Top on Mobile, Center Top on Desktop via Flex Column) */}
                         <div className="order-1 lg:col-span-6 lg:order-2 flex flex-col gap-4">
                             {/* Scoreboard Display */}
-                            <div className="bg-black/60 rounded-xl border border-white/10 p-4 flex justify-between items-center shadow-2xl relative overflow-hidden">
-                                <div className="text-4xl lg:text-6xl font-black text-white tabular-nums w-1/3 text-left">{liveMatch.scoreA}</div>
+                            <div className={`bg-black/60 rounded-xl border border-white/10 p-4 flex justify-between items-center shadow-2xl relative overflow-hidden ${swapSides ? 'flex-row-reverse' : 'flex-row'}`}>
+                                <div className={`text-4xl lg:text-6xl font-black text-white tabular-nums w-1/3 ${swapSides ? 'text-right' : 'text-left'}`}>{liveMatch.scoreA}</div>
                                 <div className="flex flex-col items-center z-10 w-1/3">
                                     <div className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest text-center truncate w-full">Set {liveMatch.currentSet}</div>
                                     <div className="text-xl md:text-2xl font-black text-white italic">VS</div>
                                     {liveMatch.status === 'finished_set' && (
-                                        <button onClick={handleStartNextSet} className="mt-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase animate-pulse shadow-lg whitespace-nowrap">
+                                        <button onClick={handleStartNextSet} className="mt-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase animate-pulse shadow-lg whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-green-400">
                                             Siguiente Set
                                         </button>
                                     )}
                                     {liveMatch.status === 'warmup' && isAdmin && (
-                                        <button onClick={handleStartGame} className="mt-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase animate-pulse shadow-lg whitespace-nowrap">
+                                        <button onClick={handleStartGame} className="mt-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase animate-pulse shadow-lg whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-green-400">
                                             Iniciar Partido
                                         </button>
                                     )}
                                 </div>
-                                <div className="text-4xl lg:text-6xl font-black text-white tabular-nums w-1/3 text-right">{liveMatch.scoreB}</div>
+                                <div className={`text-4xl lg:text-6xl font-black text-white tabular-nums w-1/3 ${swapSides ? 'text-left' : 'text-right'}`}>{liveMatch.scoreB}</div>
                             </div>
                             
                             {/* TV Transmission Controls (Center Panel) */}
@@ -1494,17 +1509,22 @@ export const App: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    <div className="flex w-full justify-between items-center bg-black/30 rounded p-2 mb-4 border border-white/5">
-                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                    <div className="flex flex-col w-full justify-center items-center bg-black/30 rounded p-2 mb-4 border border-white/5">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2 w-full mb-2">
                                             Stats & Gráficos
-                                            <button onClick={() => setTvMode(true)} className="ml-2 bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest shadow">Vista TV 📺</button>
                                         </span>
-                                        <div className="flex gap-1 justify-end flex-wrap">
+                                        <div className="flex gap-1 justify-center flex-wrap w-full">
                                             <button 
                                                 onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showSetStatsExt: !(prev.tvSettings?.showSetStatsExt)}} : null)} 
                                                 className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showSetStatsExt ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400'}`}
                                             >
                                                 Stats Set (%)
+                                            </button>
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showMatchStatsExt: !(prev.tvSettings?.showMatchStatsExt)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showMatchStatsExt ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Stats General
                                             </button>
                                             <button 
                                                 onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showPointEvolution: !(prev.tvSettings?.showPointEvolution)}} : null)} 
@@ -1513,10 +1533,50 @@ export const App: React.FC = () => {
                                                 Evol. Puntos
                                             </button>
                                             <button 
-                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showTeamStats: !(prev.tvSettings?.showTeamStats)}} : null)} 
-                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showTeamStats ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showWinPrediction: !(prev.tvSettings?.showWinPrediction)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showWinPrediction ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}`}
                                             >
-                                                Equipo
+                                                Predicción Set
+                                            </button>
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showReceiverAccuracy: !(prev.tvSettings?.showReceiverAccuracy)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showReceiverAccuracy ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Cancha Stats
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    updateLiveMatch(prev => {
+                                                        if (!prev) return null;
+                                                        const fix = activeTournament.fixtures?.find(f => f.id === prev.matchId);
+                                                        const teamAId = fix?.teamAId || '';
+                                                        const isA = prev.tvSettings?.showTeamStats === teamAId;
+                                                        return {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showTeamStats: isA ? false : teamAId}};
+                                                    });
+                                                }} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showTeamStats === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Eq. A
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    updateLiveMatch(prev => {
+                                                        if (!prev) return null;
+                                                        const fix = activeTournament.fixtures?.find(f => f.id === prev.matchId);
+                                                        const teamBId = fix?.teamBId || '';
+                                                        const isB = prev.tvSettings?.showTeamStats === teamBId;
+                                                        return {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showTeamStats: isB ? false : teamBId}};
+                                                    });
+                                                }} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showTeamStats === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Eq. B
+                                            </button>
+                                            <button 
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showServeSpeed: !(prev.tvSettings?.showServeSpeed)}} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showServeSpeed ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                Saque
                                             </button>
                                         </div>
                                     </div>
@@ -1573,16 +1633,22 @@ export const App: React.FC = () => {
                                                 <button
                                                     onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), featuredPlayerId: statsPanelPlayerId, featuredPlayerMode: prev.tvSettings?.featuredPlayerMode === 'presentation' ? null : 'presentation'}} : null)}
                                                     disabled={!statsPanelPlayerId}
-                                                    className={`flex-1 py-2 rounded text-xs font-black uppercase transition disabled:opacity-50 ${liveMatch.tvSettings?.featuredPlayerMode === 'presentation' ? 'bg-vnl-accent text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800 text-cyan-400 hover:bg-slate-700'}`}
+                                                    className={`flex-1 py-2 rounded text-[10px] font-black uppercase transition disabled:opacity-50 ${liveMatch.tvSettings?.featuredPlayerMode === 'presentation' ? 'bg-vnl-accent text-black shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800 text-cyan-400 hover:bg-slate-700'}`}
                                                 >
                                                     Lanzar Foto
                                                 </button>
                                                 <button
                                                     onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), featuredPlayerId: statsPanelPlayerId, featuredPlayerMode: prev.tvSettings?.featuredPlayerMode === 'stats' ? null : 'stats'}} : null)}
                                                     disabled={!statsPanelPlayerId}
-                                                    className={`flex-1 py-2 rounded text-xs font-black uppercase transition disabled:opacity-50 ${liveMatch.tvSettings?.featuredPlayerMode === 'stats' ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(249,115,22,0.5)]' : 'bg-slate-800 text-orange-400 hover:bg-slate-700'}`}
+                                                    className={`flex-1 py-2 rounded text-[10px] font-black uppercase transition disabled:opacity-50 ${liveMatch.tvSettings?.featuredPlayerMode === 'stats' ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(249,115,22,0.5)]' : 'bg-slate-800 text-orange-400 hover:bg-slate-700'}`}
                                                 >
-                                                    Lanzar Stats
+                                                    Al Marcador
+                                                </button>
+                                                <button
+                                                    onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showVersus: !(prev.tvSettings?.showVersus)}} : null)}
+                                                    className={`flex-1 py-2 rounded text-[10px] font-black uppercase transition ${liveMatch.tvSettings?.showVersus ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]' : 'bg-slate-800 text-purple-400 hover:bg-slate-700'}`}
+                                                >
+                                                    Versus
                                                 </button>
                                             </div>
                                         </div>
@@ -1596,7 +1662,7 @@ export const App: React.FC = () => {
                                     players={liveMatch.rotationA} 
                                     serving={liveMatch.servingTeamId === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId}
                                     teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)?.name!}
-                                    variant={currentUser.role === 'REFEREE' ? 'referee' : 'default'}
+                                    variant={(currentUser.role === 'REFEREE' || currentUser.role === 'MAIN_REFEREE') ? 'referee' : 'default'}
                                     isVertical={isVertical}
                                 />
                                 <div className={`${isVertical ? 'w-1 h-full' : 'h-1 w-full'} bg-white/20 rounded-full`}></div>
@@ -1604,14 +1670,14 @@ export const App: React.FC = () => {
                                     players={liveMatch.rotationB} 
                                     serving={liveMatch.servingTeamId === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId}
                                     teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)?.name!}
-                                    variant={currentUser.role === 'REFEREE' ? 'referee' : 'default'}
+                                    variant={(currentUser.role === 'REFEREE' || currentUser.role === 'MAIN_REFEREE') ? 'referee' : 'default'}
                                     isVertical={isVertical}
                                 />
                             </div>
                         </div>
 
                         {/* 2. Team A Control (Middle Left on Desktop) */}
-                        <div className="order-2 lg:col-span-3 lg:order-1 space-y-4">
+                        <div className={`order-2 lg:col-span-3 ${swapSides ? 'lg:order-3' : 'lg:order-1'} space-y-4`}>
                             <ScoreControl 
                                 role={currentUser.role}
                                 linkedTeamId={currentUser.linkedTeamId}
@@ -1643,7 +1709,7 @@ export const App: React.FC = () => {
                         </div>
                         
                         {/* 3. Team B Control (Middle Right on Desktop) */}
-                        <div className="order-3 lg:col-span-3 lg:order-3 space-y-4">
+                        <div className={`order-3 lg:col-span-3 ${swapSides ? 'lg:order-1' : 'lg:order-3'} space-y-4`}>
                             <ScoreControl 
                                 role={currentUser.role}
                                 linkedTeamId={currentUser.linkedTeamId}
@@ -1680,7 +1746,7 @@ export const App: React.FC = () => {
                                     players={liveMatch.rotationA} 
                                     serving={liveMatch.servingTeamId === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId}
                                     teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)?.name!}
-                                    variant={currentUser.role === 'REFEREE' ? 'referee' : 'default'}
+                                    variant={(currentUser.role === 'REFEREE' || currentUser.role === 'MAIN_REFEREE') ? 'referee' : 'default'}
                                     isVertical={isVertical}
                                 />
                                 <div className={`${isVertical ? 'w-1 h-full' : 'h-1 w-full'} bg-white/20 rounded-full`}></div>
@@ -1688,7 +1754,7 @@ export const App: React.FC = () => {
                                     players={liveMatch.rotationB} 
                                     serving={liveMatch.servingTeamId === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId}
                                     teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)?.name!}
-                                    variant={currentUser.role === 'REFEREE' ? 'referee' : 'default'}
+                                    variant={(currentUser.role === 'REFEREE' || currentUser.role === 'MAIN_REFEREE') ? 'referee' : 'default'}
                                     isVertical={isVertical}
                                 />
                             </div>
@@ -1890,22 +1956,35 @@ export const App: React.FC = () => {
       {/* MODALS */}
       
       {/* Set Stats Modal (Auto or Manual) */}
-      {viewingSetStats && activeTournament && (
-          <SetStatsModal 
-              setNumber={viewingSetStats.setNum}
-              setData={viewingSetStats.data}
-              teamA={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch?.matchId)?.teamAId)!}
-              teamB={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch?.matchId)?.teamBId)!}
-              onClose={() => setViewingSetStats(null)}
-              onNextSet={() => { handleStartNextSet(); setViewingSetStats(null); }}
-              showNextButton={canControlMatch && liveMatch?.status === 'finished_set'}
-              onShowOnTV={() => {
-                  if (canControlMatch) {
-                      // Show stats for THIS specific set (setNumber - 1 because array is 0-indexed)
-                      updateLiveMatch(prev => prev ? { ...prev, showStats: true, showScoreboard: false, statsSetIndex: viewingSetStats.setNum - 1 } : null);
-                  }
-              }}
-          />
+      {viewingSetStats && activeTournament && activeTournament.fixtures?.find(f => f.id === liveMatch?.matchId) && (
+          (() => {
+              const fix = activeTournament.fixtures.find(f => f.id === liveMatch?.matchId);
+              const tA = activeTournament.teams.find(t => t.id === fix?.teamAId);
+              const tB = activeTournament.teams.find(t => t.id === fix?.teamBId);
+              if (!tA || !tB) return null;
+              
+              return (
+                  <SetStatsModal 
+                      setNumber={viewingSetStats.setNum}
+                      setData={viewingSetStats.data}
+                      teamA={tA}
+                      teamB={tB}
+                      onClose={() => setViewingSetStats(null)}
+                      onNextSet={() => { handleStartNextSet(); setViewingSetStats(null); }}
+                      showNextButton={canControlMatch && liveMatch?.status === 'finished_set'}
+                      onShowOnTV={() => {
+                          if (canControlMatch) {
+                              updateLiveMatch(prev => prev ? { ...prev, showStats: true, showScoreboard: false, statsSetIndex: viewingSetStats.setNum - 1 } : null);
+                          }
+                      }}
+                      onHideFromTV={() => {
+                          if (canControlMatch) {
+                              updateLiveMatch(prev => prev ? { ...prev, showStats: false, showScoreboard: true } : null);
+                          }
+                      }}
+                  />
+              );
+          })()
       )}
       
       {/* MVP Selection Modal */}
@@ -2278,6 +2357,33 @@ export const App: React.FC = () => {
                 setEditingPlayer(null);
             }}
           />
+      )}
+
+      {/* ROTATION VIEW OVERLAY */}
+      {liveMatch?.showRotation && ['ADMIN', 'MAIN_REFEREE', 'REFEREE'].includes(currentUser?.role || '') && activeTournament && (
+          <div className="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-md">
+              <div className="w-full max-w-4xl flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">Vista de Rotación en Vivo</h3>
+                  <button onClick={handleToggleRotationView} className="bg-red-500/20 hover:bg-red-500/40 text-red-500 px-4 py-2 rounded font-bold uppercase text-xs">Cerrar</button>
+              </div>
+              <div className="w-full max-w-4xl bg-vnl-panel border border-white/20 p-4 rounded shadow-2xl flex flex-col gap-4 overflow-y-auto max-h-[80vh]">
+                  <Court 
+                      players={liveMatch.rotationA} 
+                      serving={liveMatch.servingTeamId === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId}
+                      teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)?.name!}
+                      variant="referee"
+                      isVertical={false}
+                  />
+                  <div className="h-2 w-full bg-white/10 rounded-full my-2"></div>
+                  <Court 
+                      players={liveMatch.rotationB} 
+                      serving={liveMatch.servingTeamId === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId}
+                      teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)?.name!}
+                      variant="referee"
+                      isVertical={false}
+                  />
+              </div>
+          </div>
       )}
 
       {/* STREAM GUIDE MODAL */}

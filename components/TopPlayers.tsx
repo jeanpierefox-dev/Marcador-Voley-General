@@ -66,7 +66,7 @@ export const TopPlayers: React.FC<TopPlayersProps> = ({ tournament }) => {
                                 {player.teamLogo && <img src={player.teamLogo} className="w-3 h-3 object-contain" />}
                                 <span className="uppercase font-bold text-[10px]">{player.teamName}</span>
                                 <span className="w-1 h-1 rounded-full bg-slate-600"></span>
-                                <span>{player.role}</span>
+                                <span>{player.role || 'Jugador'}</span>
                             </div>
                         </div>
                     </div>

@@ -135,17 +135,21 @@ export interface LiveMatchState {
     triggerHawkEye?: number;
     hawkEyeStatus?: 'in' | 'out' | null;
     showPlayerStats?: boolean;
-    showTeamStats?: boolean;
+    showTeamStats?: boolean | string;
     featuredPlayerId?: string;
     featuredPlayerMode?: 'presentation' | 'stats' | null;
-    showVersus?: number; // Timestamp to show it briefly
+    showVersus?: boolean;
+    showServeSpeed?: boolean;
     triggerSetPoint?: number;
     triggerMatchPoint?: number;
     forceCameraChangeTrigger?: number;
     showFormations?: boolean;
     showSetStatsExt?: boolean;
+    showMatchStatsExt?: boolean;
     showPointEvolution?: boolean;
     showTopPlayersExt?: boolean;
+    showWinPrediction?: boolean;
+    showReceiverAccuracy?: boolean;
   };
 }
 

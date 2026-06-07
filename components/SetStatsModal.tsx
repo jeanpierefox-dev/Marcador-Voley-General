@@ -8,12 +8,13 @@ interface SetStatsModalProps {
   teamA: Team;
   teamB: Team;
   onClose: () => void;
-  onNextSet?: () => void; // Function to trigger trigger next set
+  onNextSet?: () => void; // Function to trigger next set
   showNextButton?: boolean; // Condition to show the button
   onShowOnTV?: () => void; // Function to trigger showing stats on TV
+  onHideFromTV?: () => void; // Add hide from TV button
 }
 
-export const SetStatsModal: React.FC<SetStatsModalProps> = ({ setNumber, setData, teamA, teamB, onClose, onNextSet, showNextButton, onShowOnTV }) => {
+export const SetStatsModal: React.FC<SetStatsModalProps> = ({ setNumber, setData, teamA, teamB, onClose, onNextSet, showNextButton, onShowOnTV, onHideFromTV }) => {
   
   const calculateStats = (teamId: string, opponentId: string, history: PointLog[]) => {
       if (!history) return { total: 0, attack: 0, block: 0, ace: 0, opponentErrors: 0, errorsMade: 0, yellow: 0, red: 0 };
@@ -150,12 +151,17 @@ export const SetStatsModal: React.FC<SetStatsModalProps> = ({ setNumber, setData
                             onClick={onShowOnTV}
                             className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold py-2 uppercase tracking-widest border border-blue-400/30 transition rounded flex items-center justify-center gap-1"
                         >
-                            📺 Mostrar en TV
+                            📺 Mostrar TV
                         </button>
                     )}
-                    <button className="flex-1 bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-bold py-2 uppercase tracking-widest border border-white/10 transition rounded">
-                        📸 Capturar Imagen
-                    </button>
+                    {onHideFromTV && (
+                        <button 
+                            onClick={onHideFromTV}
+                            className="flex-1 bg-red-600/80 hover:bg-red-500 text-white text-[10px] font-bold py-2 uppercase tracking-widest border border-red-400/30 transition rounded flex items-center justify-center gap-1"
+                        >
+                            🚫 Quitar TV
+                        </button>
+                    )}
                     <button onClick={onClose} className="flex-1 bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-bold py-2 uppercase tracking-widest border border-white/10 transition rounded">
                         Cerrar
                     </button>
