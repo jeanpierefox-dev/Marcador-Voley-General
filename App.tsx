@@ -1147,6 +1147,7 @@ export const App: React.FC = () => {
             match={liveMatch}
             teamA={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)!}
             teamB={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)!}
+            swapSides={swapSides}
             tournament={activeTournament}
             currentUser={currentUser}
             onExit={() => setTvMode(false)}
@@ -1537,12 +1538,6 @@ export const App: React.FC = () => {
                                                 className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showWinPrediction ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}`}
                                             >
                                                 Predicción Set
-                                            </button>
-                                            <button 
-                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showReceiverAccuracy: !(prev.tvSettings?.showReceiverAccuracy)}} : null)} 
-                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showReceiverAccuracy ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-400'}`}
-                                            >
-                                                Cancha Stats
                                             </button>
                                             <button 
                                                 onClick={() => {

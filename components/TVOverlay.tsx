@@ -10,6 +10,7 @@ interface TVOverlayProps {
   onUpdateMatch?: (updates: Partial<LiveMatchState>) => void;
   teamA: Team;
   teamB: Team;
+  swapSides?: boolean;
   tournament?: Tournament | null;
   currentUser?: User | null;
   onExit: () => void;
@@ -33,6 +34,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   match, 
   teamA, 
   teamB, 
+  swapSides = false,
   tournament,
   currentUser,
   onExit, 
@@ -64,9 +66,6 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   const [stingerAnim, setStingerAnim] = useState<'idle' | 'in' | 'out'>('idle');
   const [boardAnim, setBoardAnim] = useState<'idle' | 'in' | 'out'>('idle');
   const [renderScoreboard, setRenderScoreboard] = useState(showScoreboard);
-  const [visibleScoreboard, setVisibleScoreboard] = useState(showScoreboard); // keep for prop sync logic
-  
-  const [visibleStats, setVisibleStats] = useState(showStatsOverlay);
   const [isConstructing, setIsConstructing] = useState(false);
 
   // New features state
@@ -75,9 +74,15 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   // Set Point / Match Point Logic
   const prevScore = useRef({ a: match.scoreA, b: match.scoreB });
   useEffect(() => {
-      // Calculate current wins
-      let winsA = 0; let winsB = 0;
-      match.sets.forEach(s => { if (s.scoreA > s.scoreB) winsA++; else if(s.scoreB > s.scoreA) winsB++; });
+      // Calculate current wins based ONLY on finished sets
+      let calcWinsA = 0; let calcWinsB = 0;
+      match.sets.forEach((s, idx) => {
+          const isFinished = idx < match.currentSet - 1 || match.status === 'finished' || (match.status === 'finished_set' && idx === match.currentSet - 1);
+          if (isFinished) {
+              if (s.scoreA > s.scoreB) calcWinsA++;
+              else if (s.scoreB > s.scoreA) calcWinsB++;
+          }
+      });
       const requiredWins = Math.ceil((match.config.maxSets || 3) / 2);
       const isTieBreak = match.currentSet === (match.config.maxSets || 3);
       const targetScore = isTieBreak ? (match.config.tieBreakPoints || 15) : (match.config.pointsPerSet || 25);
@@ -91,11 +96,11 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           let wasTeamBPoint = (prevB >= targetScore - 1) && (prevB - prevA >= 1);
 
           if (teamAPoint && !wasTeamAPoint) {
-             const isMatchPoint = winsA === requiredWins - 1;
+             const isMatchPoint = calcWinsA === requiredWins - 1;
              setPointBanner({ text: isMatchPoint ? 'MATCH POINT' : 'SET POINT', color: '#827DFF' });
              setTimeout(() => setPointBanner(null), 3000);
           } else if (teamBPoint && !wasTeamBPoint) {
-             const isMatchPoint = winsB === requiredWins - 1;
+             const isMatchPoint = calcWinsB === requiredWins - 1;
              setPointBanner({ text: isMatchPoint ? 'MATCH POINT' : 'SET POINT', color: '#4C8BFF' });
              setTimeout(() => setPointBanner(null), 3000);
           }
@@ -104,7 +109,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       checkPoint(match.scoreA, match.scoreB, prevScore.current.a, prevScore.current.b);
       prevScore.current = { a: match.scoreA, b: match.scoreB };
   }, [match.scoreA, match.scoreB, match.currentSet, match.sets, match.config]);
-  // const [showRotationView, setShowRotationView] = useState(false); // Removed, now using match.showRotation
+  // const [showRotationView, setShowRotationView] = useState(false); // Removed, now using activeShowRotation
 
   // Camera Selection State
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
@@ -172,76 +177,74 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   // Broadcast Settings
   const isVertical = match.tvSettings?.style === 'vertical';
 
-  // Deprecated auto-detect orientation from local window since it's now cloud-controlled
-  // (Removed window.addEventListener('resize', ...))
+  // Unified Transitions ("Stinger Effect")
+  const [visibleState, setVisibleState] = useState({
+      showScoreboard,
+      showStatsOverlay,
+      showRotation: match.showRotation,
+      tvSettings: match.tvSettings
+  });
 
-  // Handle Transitions ("Stinger Effect")
-  useEffect(() => {
-    let timers: NodeJS.Timeout[] = [];
-    // Scoreboard Toggle Transition
-    if (showScoreboard !== visibleScoreboard) {
-        if (showScoreboard) {
-            // Turn ON: Logo In -> Logo Out -> Scoreboard In
-            setStingerAnim('in');
-            timers.push(setTimeout(() => {
-                setStingerAnim('out');
-                timers.push(setTimeout(() => {
-                    setStingerAnim('idle');
-                    setRenderScoreboard(true);
-                    setBoardAnim('in');
-                    timers.push(setTimeout(() => setBoardAnim('idle'), 800));
-                }, 800));
-            }, 800));
-            setVisibleScoreboard(true);
-        } else {
-            // Turn OFF: Scoreboard Out -> Logo In -> Logo Out
-            setBoardAnim('out');
-            timers.push(setTimeout(() => {
-                setRenderScoreboard(false);
-                setBoardAnim('idle');
-                setStingerAnim('in');
-                timers.push(setTimeout(() => {
-                    setStingerAnim('out');
-                    timers.push(setTimeout(() => setStingerAnim('idle'), 800));
-                }, 800));
-            }, 800));
-            setVisibleScoreboard(false);
-        }
-    }
-    return () => timers.forEach(clearTimeout);
-  }, [showScoreboard]); 
-  
-  useEffect(() => {
-    // Stats Toggle Transition
-    if (showStatsOverlay !== visibleStats) {
-        if (showStatsOverlay) {
-            // Turn ON
-            setStingerAnim('in');
-            const hideLogoTimer = setTimeout(() => {
-                setStingerAnim('idle');
-                setIsConstructing(true);
-            }, 700);
-            
-            const showStatsTimer = setTimeout(() => {
-                setVisibleStats(true);
-            }, 1200);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
-            const endConstructionTimer = setTimeout(() => {
-                setIsConstructing(false);
-            }, 1700);
-            
-            return () => { clearTimeout(hideLogoTimer); clearTimeout(showStatsTimer); clearTimeout(endConstructionTimer); };
-        } else {
-            // Turn OFF
-            setVisibleStats(false);
-            setStingerAnim('out');
-            const resetAnimTimer = setTimeout(() => {
-                setStingerAnim('idle');
-            }, 700);
-            return () => clearTimeout(resetAnimTimer);
-        }
-    }
-  }, [showStatsOverlay]);
+  useEffect(() => {
+      // Check if any visual setting has changed
+      const hasChanged = 
+          showScoreboard !== visibleState.showScoreboard ||
+          showStatsOverlay !== visibleState.showStatsOverlay ||
+          match.showRotation !== visibleState.showRotation ||
+          JSON.stringify(match.tvSettings) !== JSON.stringify(visibleState.tvSettings);
+
+      if (hasChanged && !isTransitioning) {
+          setIsTransitioning(true);
+          
+          let timers: NodeJS.Timeout[] = [];
+          
+          // Pattern: Logo IN -> Update Content -> Logo OUT
+          setStingerAnim('in');
+          
+          if (visibleState.showScoreboard && !showScoreboard) {
+              setBoardAnim('out');
+          }
+
+          timers.push(setTimeout(() => {
+              // Now covered by logo, update the actual visible content
+              setVisibleState({
+                  showScoreboard,
+                  showStatsOverlay,
+                  showRotation: match.showRotation,
+                  tvSettings: match.tvSettings
+              });
+              setRenderScoreboard(showScoreboard);
+              
+              if (showStatsOverlay) {
+                  setIsConstructing(true);
+                  timers.push(setTimeout(() => setIsConstructing(false), 500));
+              }
+
+              if (showScoreboard && !visibleState.showScoreboard) {
+                  setBoardAnim('in');
+                  timers.push(setTimeout(() => setBoardAnim('idle'), 800));
+              } else if (!showScoreboard) {
+                  setBoardAnim('idle');
+              }
+
+              setStingerAnim('out');
+              
+              timers.push(setTimeout(() => {
+                  setStingerAnim('idle');
+                  setIsTransitioning(false);
+              }, 800));
+          }, 800));
+
+          return () => timers.forEach(clearTimeout);
+      }
+  }, [showScoreboard, showStatsOverlay, match.showRotation, match.tvSettings, visibleState, isTransitioning]);
+
+  // Use visibleState properties instead of the direct props for UI rendering
+  const activeShowStatsOverlay = visibleState.showStatsOverlay;
+  const activeShowRotation = visibleState.showRotation;
+  const activeTvSettings = visibleState.tvSettings;
 
   // ... (rest of the code)
 
@@ -283,14 +286,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
   // Handle Remote Camera Switch
   useEffect(() => {
-     if (match.tvSettings?.forceCameraChangeTrigger) {
+     if (activeTvSettings?.forceCameraChangeTrigger) {
          if (videoDevices.length > 1) {
              const currentIndex = videoDevices.findIndex(d => d.deviceId === selectedDeviceId);
              const nextIndex = (currentIndex + 1) % videoDevices.length;
              setSelectedDeviceId(videoDevices[nextIndex].deviceId);
          }
      }
-  }, [match.tvSettings?.forceCameraChangeTrigger]);
+  }, [activeTvSettings?.forceCameraChangeTrigger]);
 
   // Activate Camera Logic
   useEffect(() => {
@@ -442,11 +445,16 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   // Determine match state
   const sets = match.sets || [];
   const requiredWins = Math.ceil(match.config.maxSets / 2);
-  const winThreshold = match.config.pointsPerSet; 
-
-  const winsA = sets.filter(s => s.scoreA > s.scoreB && Math.max(s.scoreA, s.scoreB) >= (match.currentSet === match.config.maxSets ? match.config.tieBreakPoints : winThreshold)).length;
-  const winsB = sets.filter(s => s.scoreB > s.scoreA && Math.max(s.scoreA, s.scoreB) >= (match.currentSet === match.config.maxSets ? match.config.tieBreakPoints : winThreshold)).length;
   
+  let winsA = 0; let winsB = 0;
+  sets.forEach((s, idx) => {
+      const isFinished = idx < match.currentSet - 1 || match.status === 'finished' || (match.status === 'finished_set' && idx === match.currentSet - 1);
+      if (isFinished) {
+          if (s.scoreA > s.scoreB) winsA++;
+          else if (s.scoreB > s.scoreA) winsB++;
+      }
+  });
+
   const matchEnded = winsA === requiredWins || winsB === requiredWins;
   const winner = winsA === requiredWins ? teamA : (winsB === requiredWins ? teamB : null);
 
@@ -617,7 +625,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* --- ROTATION OVERLAY (COURT VISUALIZATION) --- */}
-      {match.showRotation && (
+      {activeShowRotation && (
           <RotationView 
             teamA={teamA} 
             teamB={teamB} 
@@ -668,7 +676,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* --- COMPARATIVE STATS OVERLAY (VNL STYLE) --- */}
-      {visibleStats && !matchEnded && !match.showRotation && (
+      {activeShowStatsOverlay && !matchEnded && !activeShowRotation && (
         <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl px-2 z-40 transition-transform 
             ${isVertical ? 'rotate-90 scale-[0.85] origin-center h-[50vh] w-[85vh] flex items-center justify-center' : 'scale-90 md:scale-100'}
         `}>
@@ -705,19 +713,28 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                     
                     {/* Top Labels Row */}
                     <div className="flex items-end pl-0 md:pl-0 relative z-20">
-                        {/* Set Label */}
-                        <div className="bg-[#ef4444] text-white h-14 px-8 flex items-center justify-center border-4 border-white border-b-0 shadow-md ml-16 md:ml-0">
-                            <span className="font-black italic text-3xl uppercase tracking-tighter drop-shadow-md">
-                                SET {match.currentSet}
-                            </span>
-                        </div>
+                        {(() => {
+                            const isGeneral = match.statsSetIndex === undefined;
+                            const activeSetLabel = isGeneral ? 'PARTIDO' : `SET ${match.statsSetIndex! + 1}`;
+                            const titleLabel = isGeneral ? 'MATCH STATS' : 'SET STATS';
+                            return (
+                                <>
+                                {/* Set Label */}
+                                <div className="bg-[#ef4444] text-white h-14 px-8 flex items-center justify-center border-4 border-white border-b-0 shadow-md ml-16 md:ml-0">
+                                    <span className="font-black italic text-3xl uppercase tracking-tighter drop-shadow-md">
+                                        {activeSetLabel}
+                                    </span>
+                                </div>
 
-                        {/* Team Stats Label */}
-                        <div className="bg-white text-[#1e3a8a] h-10 px-6 flex items-center justify-center border-t-4 border-r-4 border-white shadow-sm mb-0">
-                            <span className="font-black italic text-sm uppercase tracking-widest">
-                                TEAM STATS
-                            </span>
-                        </div>
+                                {/* Team Stats Label */}
+                                <div className="bg-white text-[#1e3a8a] h-10 px-6 flex items-center justify-center border-t-4 border-r-4 border-white shadow-sm mb-0">
+                                    <span className="font-black italic text-sm uppercase tracking-widest">
+                                        {titleLabel}
+                                    </span>
+                                </div>
+                                </>
+                            );
+                        })()}
                     </div>
 
                     {/* Main Stats Container */}
@@ -733,12 +750,21 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
                             {/* Scores Center */}
                             <div className="w-40 flex relative z-20">
-                                <div className="flex-1 bg-[#ef4444] flex items-center justify-center border-r-2 border-white">
-                                    <span className="text-white font-black text-4xl">{match.scoreA}</span>
-                                </div>
-                                <div className="flex-1 bg-[#ef4444] flex items-center justify-center">
-                                    <span className="text-white font-black text-4xl">{match.scoreB}</span>
-                                </div>
+                                {(() => {
+                                    const isGeneral = match.statsSetIndex === undefined;
+                                    const scoreA = isGeneral ? winsA : ((match.sets[match.statsSetIndex!]?.scoreA) || 0);
+                                    const scoreB = isGeneral ? winsB : ((match.sets[match.statsSetIndex!]?.scoreB) || 0);
+                                    return (
+                                        <>
+                                        <div className="flex-1 bg-[#ef4444] flex items-center justify-center border-r-2 border-white">
+                                            <span className="text-white font-black text-4xl">{scoreA}</span>
+                                        </div>
+                                        <div className="flex-1 bg-[#ef4444] flex items-center justify-center">
+                                            <span className="text-white font-black text-4xl">{scoreB}</span>
+                                        </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
 
                             {/* Team B Name Bar */}
@@ -748,33 +774,62 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                             </div>
                         </div>
 
-                        {/* Stats Rows */}
-                        <div className="flex flex-col">
-                            {[
-                                { l: sets.filter(s => s.scoreA > s.scoreB).length, label: 'SETS', r: sets.filter(s => s.scoreB > s.scoreA).length },
-                                { l: statsA.attacks, label: 'ATTACKS', r: statsB.attacks },
-                                { l: statsA.blocks, label: 'BLOCKS', r: statsB.blocks },
-                                { l: statsA.aces, label: 'SERVES', r: statsB.aces },
-                                { l: statsA.errors, label: 'OPPONENT ERRORS', r: statsB.errors }
-                            ].map((row, idx) => (
-                                <div key={idx} className={`flex h-12 items-center border-b border-white/10 ${idx % 2 === 0 ? 'bg-[#dc2626]' : 'bg-[#1e3a8a]'}`}>
-                                    {/* Team A Value */}
-                                    <div className="flex-1 text-center">
-                                        <span className="text-white font-black text-2xl drop-shadow-sm">{row.l}</span>
+                        {/* Stats Rows or History Grid */}
+                        {(() => {
+                            const isGeneral = match.statsSetIndex === undefined;
+                            
+                            if (isGeneral) {
+                                return (
+                                    <div className="flex flex-col bg-[#1e3a8a] py-8">
+                                        <div className="flex justify-center gap-4 md:gap-8 flex-wrap px-4">
+                                            {match.sets.map((s, i) => {
+                                                const sFinished = i < match.currentSet - 1 || matchEnded || (isSetFinished && i === match.currentSet - 1);
+                                                if (!sFinished && i !== match.currentSet - 1) return null; // Don't show unplayed sets
+                                                return (
+                                                    <div key={i} className={`flex flex-col items-center px-6 py-4 rounded-xl border-4 shadow-xl ${sFinished ? 'bg-black/60 border-white/20' : 'bg-[#dc2626] border-white/50 animate-pulse'}`}>
+                                                        <div className="text-xs text-white/70 uppercase font-black tracking-widest mb-2">Set {i+1}</div>
+                                                        <div className="text-4xl font-black text-white flex items-center gap-2">
+                                                            <span className={s.scoreA > s.scoreB ? 'text-yellow-400' : ''}>{s.scoreA}</span>
+                                                            <span className="text-white/30 text-xl">-</span>
+                                                            <span className={s.scoreB > s.scoreA ? 'text-yellow-400' : ''}>{s.scoreB}</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
+                                );
+                            }
 
-                                    {/* Label */}
-                                    <div className="w-56 text-center">
-                                        <span className="text-white font-bold text-base uppercase tracking-widest opacity-100 drop-shadow-md">{row.label}</span>
-                                    </div>
+                            return (
+                            <div className="flex flex-col">
+                                {[
+                                    { l: sets.filter(s => s.scoreA > s.scoreB).length, label: 'SETS', r: sets.filter(s => s.scoreB > s.scoreA).length },
+                                    { l: statsA.attacks, label: 'ATTACKS', r: statsB.attacks },
+                                    { l: statsA.blocks, label: 'BLOCKS', r: statsB.blocks },
+                                    { l: statsA.aces, label: 'SERVES', r: statsB.aces },
+                                    { l: statsA.errors, label: 'OPPONENT ERRORS', r: statsB.errors }
+                                ].map((row, idx) => (
+                                    <div key={idx} className={`flex h-12 items-center border-b border-white/10 ${idx % 2 === 0 ? 'bg-[#dc2626]' : 'bg-[#1e3a8a]'}`}>
+                                        {/* Team A Value */}
+                                        <div className="flex-1 text-center">
+                                            <span className="text-white font-black text-2xl drop-shadow-sm">{row.l}</span>
+                                        </div>
 
-                                    {/* Team B Value */}
-                                    <div className="flex-1 text-center">
-                                        <span className="text-white font-black text-2xl drop-shadow-sm">{row.r}</span>
+                                        {/* Label */}
+                                        <div className="w-56 text-center">
+                                            <span className="text-white font-bold text-base uppercase tracking-widest opacity-100 drop-shadow-md">{row.label}</span>
+                                        </div>
+
+                                        {/* Team B Value */}
+                                        <div className="flex-1 text-center">
+                                            <span className="text-white font-black text-2xl drop-shadow-sm">{row.r}</span>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
@@ -825,12 +880,12 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* VERSUS OVERLAY (PLAYER vs PLAYER) */}
-      {!!match.tvSettings?.showVersus && (() => {
-          let pA = match.tvSettings.featuredPlayerId ? teamA.players.find(p => p.id === match.tvSettings?.featuredPlayerId) : undefined;
+      {!!activeTvSettings?.showVersus && (() => {
+          let pA = activeTvSettings.featuredPlayerId ? teamA.players.find(p => p.id === activeTvSettings?.featuredPlayerId) : undefined;
           let pB: typeof teamA.players[0] | undefined = undefined;
           
           if (!pA) {
-              pA = teamB.players.find(p => p.id === match.tvSettings?.featuredPlayerId);
+              pA = teamB.players.find(p => p.id === activeTvSettings?.featuredPlayerId);
               if (pA) {
                  // Swap if selected player is from team B
                  pB = pA;
@@ -969,7 +1024,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       })()}
 
       {/* HAWK EYE EFFECT */}
-      {match.tvSettings?.hawkEyeStatus && (
+      {activeTvSettings?.hawkEyeStatus && (
           <div className="absolute bottom-8 left-8 z-40 pointer-events-none flex items-center justify-center animate-in zoom-in slide-in-from-left duration-500">
               <div className="flex flex-col items-center justify-center gap-2 relative z-10 w-[300px] h-[340px] border-2 border-blue-500/50 bg-[#0f111a]/95 shadow-[0_0_30px_rgba(0,0,0,0.9)] rounded-xl overflow-hidden pointer-events-auto">
                   <div className="absolute top-0 w-full h-1 bg-blue-400"></div>
@@ -984,7 +1039,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                         <div className="absolute inset-x-4 bottom-[calc(2rem+8rem)] h-32 bg-blue-900/40 origin-bottom rotate-x-[60deg]"></div>
 
                         {/* The Ball Animation (Adjusted for smaller size) */}
-                        {match.tvSettings.hawkEyeStatus === 'in' ? (
+                        {activeTvSettings.hawkEyeStatus === 'in' ? (
                             <>
                                 <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-8 h-4 bg-black/80 rounded-full blur-sm animate-[shadowScaleIn_2s_ease-in_forwards]"></div>
                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-300 rounded-full shadow-[inset_-4px_-4px_8px_rgba(0,0,0,0.5),0_0_10px_rgba(253,224,71,0.8)] flex items-center justify-center animate-[bounceInLine_2s_ease-out_forwards]" style={{animation: 'dropIn 2s ease-out forwards'}}>
@@ -1007,7 +1062,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                         )}
                   </div>
 
-                  {match.tvSettings.hawkEyeStatus === 'in' ? (
+                  {activeTvSettings.hawkEyeStatus === 'in' ? (
                       <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2">
                           <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-green-300 to-green-600 drop-shadow-[0_0_20px_rgba(34,197,94,0.8)] leading-none">IN</h1>
                           <p className="text-green-400 font-bold text-xs tracking-[0.3em] mt-1">DENTRO</p>
@@ -1023,17 +1078,17 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* FEATURED PLAYER EFFECT */}
-      {match.tvSettings?.featuredPlayerId && match.tvSettings.featuredPlayerMode === 'presentation' && (
+      {activeTvSettings?.featuredPlayerId && activeTvSettings.featuredPlayerMode === 'presentation' && (
           <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in duration-500">
              {(() => {
-                 const player = match.rotationA.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
-                                match.benchA.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
-                                match.rotationB.find(p => p.id === match.tvSettings!.featuredPlayerId) || 
-                                match.benchB.find(p => p.id === match.tvSettings!.featuredPlayerId);
+                 const player = match.rotationA.find(p => p.id === activeTvSettings!.featuredPlayerId) || 
+                                match.benchA.find(p => p.id === activeTvSettings!.featuredPlayerId) || 
+                                match.rotationB.find(p => p.id === activeTvSettings!.featuredPlayerId) || 
+                                match.benchB.find(p => p.id === activeTvSettings!.featuredPlayerId);
                  if (!player) return null;
                  
                  const pTeam = [...match.rotationA, ...match.benchA].some(p => p.id === player.id) ? teamA : teamB;
-                 const isPresentation = match.tvSettings.featuredPlayerMode === 'presentation';
+                 const isPresentation = activeTvSettings.featuredPlayerMode === 'presentation';
 
                  // Calculate simplistic stats
                  const acts = match.sets.flatMap(s => s.history).filter(h => h.playerId === player.id);
@@ -1106,7 +1161,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
 
       {/* --- FORMATIONS OVERLAY --- */}
-      {match.tvSettings?.showFormations && (
+      {activeTvSettings?.showFormations && (
           <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in zoom-in duration-500">
              <div className={`relative flex font-sans ${isVertical ? 'flex-col gap-4' : 'flex-row gap-12'}`}>
                 {/* Team A Formation */}
@@ -1175,30 +1230,40 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* --- POINT EVOLUTION (TIMELINE) OVERLAY --- */}
-      {match.tvSettings?.showPointEvolution && (
+      {activeTvSettings?.showPointEvolution && (
           <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-full max-w-5xl z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in slide-in-from-bottom duration-500">
              <div className="relative w-full flex items-center justify-center drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
                   {(() => {
                       const currSet = match.sets[match.currentSet - 1] || { history: [] };
                       const setHistory = currSet.history || [];
                       
-                      let runA = 0;
-                      let runB = 0;
                       const timeline: { a: number, b: number, whoScored: string }[] = [];
                       
                       const scoringEvents = setHistory.filter(h => 
                           h.type === 'attack' || h.type === 'block' || h.type === 'ace' || h.type === 'opponent_error' || h.type === 'red_card'
                       );
 
-                      scoringEvents.forEach((h) => {
-                          let scorerA = false;
-                          if (h.type === 'opponent_error') {
-                              scorerA = h.teamId !== teamA.id;
+                      scoringEvents.forEach((h, index) => {
+                          const [scoreAStr, scoreBStr] = h.scoreSnapshot.split('-');
+                          const newA = parseInt(scoreAStr);
+                          const newB = parseInt(scoreBStr);
+
+                          let whoScored = '';
+                          const prevA = index > 0 ? timeline[index-1].a : 0;
+                          const prevB = index > 0 ? timeline[index-1].b : 0;
+                          
+                          if (newA > prevA && newB === prevB) {
+                              whoScored = teamA.id;
+                          } else if (newB > prevB && newA === prevA) {
+                              whoScored = teamB.id;
                           } else {
-                              scorerA = h.teamId === teamA.id;
+                              if (h.type === 'opponent_error' || h.type === 'red_card') {
+                                  whoScored = h.teamId === teamA.id ? teamB.id : teamA.id;
+                              } else {
+                                  whoScored = h.teamId;
+                              }
                           }
-                          if (scorerA) runA++; else runB++;
-                          timeline.push({ a: runA, b: runB, whoScored: scorerA ? teamA.id : teamB.id });
+                          timeline.push({ a: newA, b: newB, whoScored });
                       });
 
                       const maxColumns = 12; 
@@ -1218,8 +1283,8 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                       {match.scoreA}
                                   </div>
                                   {historyDisplay.map((pointState, i) => (
-                                      <div key={i} className={`flex-1 flex items-center justify-center border-r border-[#ffffff15] text-xl md:text-3xl font-black text-white/90 ${pointState.whoScored === teamA.id ? 'bg-[#ffffff10]' : ''}`}>
-                                          {pointState.whoScored === teamA.id ? pointState.a : ''}
+                                      <div key={i} className={`flex-1 flex items-center justify-center border-r border-[#ffffff15] text-xl md:text-3xl font-black ${pointState.whoScored === teamA.id ? 'text-white bg-[#ffffff10]' : 'text-white/50'}`}>
+                                          {pointState.a}
                                       </div>
                                   ))}
                                   {/* Fill empty columns if needed */}
@@ -1239,8 +1304,8 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                       {match.scoreB}
                                   </div>
                                   {historyDisplay.map((pointState, i) => (
-                                      <div key={i} className={`flex-1 flex items-center justify-center border-r border-[#ffffff15] text-xl md:text-3xl font-black text-white/90 ${pointState.whoScored === teamB.id ? 'bg-[#ffffff10]' : ''}`}>
-                                          {pointState.whoScored === teamB.id ? pointState.b : ''}
+                                      <div key={i} className={`flex-1 flex items-center justify-center border-r border-[#ffffff15] text-xl md:text-3xl font-black ${pointState.whoScored === teamB.id ? 'text-white bg-[#ffffff10]' : 'text-white/50'}`}>
+                                          {pointState.b}
                                       </div>
                                   ))}
                                   {Array.from({length: Math.max(0, maxColumns - historyDisplay.length)}).map((_, i) => (
@@ -1254,7 +1319,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
       {/* SERVE SPEED OVERLAY */}
-      {match.tvSettings?.showServeSpeed && (
+      {activeTvSettings?.showServeSpeed && (
           <div className="fixed bottom-32 right-12 z-40 animate-in slide-in-from-right fade-in pointer-events-none">
               <div className="bg-gradient-to-br from-black/80 to-slate-900 border border-emerald-500/30 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] p-4 w-64 backdrop-blur-md">
                   <div className="flex justify-between items-center mb-4">
@@ -1279,7 +1344,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
 
-      {match.tvSettings?.showSetStatsExt && (
+      {activeTvSettings?.showSetStatsExt && (
           <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
              <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
                  <div className="flex flex-col pt-6 pb-2 relative">
@@ -1372,7 +1437,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* WIN PREDICTION */}
-      {match.tvSettings?.showWinPrediction && (
+      {activeTvSettings?.showWinPrediction && (
           <div className="absolute bottom-8 right-8 z-40 flex flex-col pointer-events-none items-center justify-center bg-transparent animate-in slide-in-from-right duration-500 w-[300px]">
               <div className="relative w-full bg-[#0f0b29]/95 border-l-[4px] border-[#4C8BFF] rounded-lg overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-md">
                  <div className="flex flex-col relative w-full pt-3">
@@ -1446,7 +1511,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* RECEIVER ACCURACY / SERVE ERRORS */}
-      {match.tvSettings?.showReceiverAccuracy && (
+      {activeTvSettings?.showReceiverAccuracy && (
           <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-end pb-32 animate-in slide-in-from-bottom fade-in duration-700">
               <div className="relative border-b-4 border-slate-300 w-full max-w-5xl h-80 bg-[#b29f8a] border-4 border-white shadow-[0_20px_50px_rgba(0,0,0,0.8)] perspective-1000 transform rotate-x-[20deg] flex flex-col items-center overflow-hidden">
                  {/* Court lines */}
@@ -1498,7 +1563,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* --- MATCH STATISTICS OVERLAY --- */}
-      {match.tvSettings?.showMatchStatsExt && (
+      {activeTvSettings?.showMatchStatsExt && (
           <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
              <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
                  <div className="flex flex-col pt-6 pb-2 relative">
@@ -1621,7 +1686,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       ) : (
           /* --- SCOREBOARD (RESPONSIVE VERTICAL/HORIZONTAL) --- */
-          renderScoreboard && !isPreMatch && !match.showRotation && (
+          renderScoreboard && !isPreMatch && !activeShowRotation && (
             <div className={`relative z-10 transition-all duration-300
                 ${isVertical 
                     ? 'absolute top-0 left-0 h-full w-32 md:w-40 flex items-center justify-center pointer-events-none' 
@@ -1649,30 +1714,32 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                     
                     {/* Set Point / Match Point Banner */}
                     {pointBanner && (
-                        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-                             <div className="w-full h-40 bg-gradient-to-r from-transparent via-[#0f111a]/90 to-transparent flex flex-col items-center justify-center animate-in zoom-in slide-in-from-bottom-10 border-y-2" style={{ borderColor: pointBanner.color }}>
-                                 <h1 className="text-6xl md:text-8xl font-black text-white italic tracking-[0.2em] uppercase drop-shadow-[0_0_30px_rgba(255,255,255,0.8)]" style={{ textShadow: `0 0 20px ${pointBanner.color}, 0 0 40px ${pointBanner.color}` }}>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-6 z-50 pointer-events-none flex flex-col items-center justify-center animate-in slide-in-from-bottom-5 duration-500">
+                             <div className="bg-gradient-to-t from-black/95 to-black/70 backdrop-blur-md px-12 md:px-24 py-3 md:py-5 rounded-t-[1.5rem] border-t-4 border-x border-white/20 shadow-[0_-20px_50px_rgba(0,0,0,0.6)]" style={{ borderTopColor: pointBanner.color }}>
+                                 <h1 className="text-4xl md:text-6xl font-black text-white italic uppercase tracking-[0.15em] drop-shadow-lg" style={{ color: pointBanner.color }}>
                                      {pointBanner.text}
                                  </h1>
-                                 <div className="mt-2 text-white/80 font-bold uppercase tracking-widest text-lg md:text-2xl animate-pulse">
-                                     {pointBanner.text === 'MATCH POINT' ? 'PUNTO DE PARTIDO' : 'PUNTO DE SET'}
+                                 <div className="mt-1 flex justify-center">
+                                     <div className="text-white/90 font-bold uppercase tracking-[0.2em] text-xs md:text-sm bg-white/10 px-4 py-1 rounded-full border border-white/10">
+                                         {pointBanner.text === 'MATCH POINT' ? 'PUNTO DE PARTIDO' : 'PUNTO DE SET'}
+                                     </div>
                                  </div>
                              </div>
                         </div>
                     )}
 
                     {/* Left Attachment (Team A Stats) */}
-                    {(match.tvSettings?.showTeamStats === teamA.id || match.tvSettings?.showPlayerStats || (match.tvSettings?.featuredPlayerMode === 'stats' && teamA.players.some(p => p.id === match.tvSettings?.featuredPlayerId))) && !isVertical && (
+                    {(activeTvSettings?.showTeamStats === teamA.id || activeTvSettings?.showPlayerStats || (activeTvSettings?.featuredPlayerMode === 'stats' && teamA.players.some(p => p.id === activeTvSettings?.featuredPlayerId))) && !isVertical && (
                         <div className="absolute top-1/2 -translate-y-1/2 right-[100%] pr-2 h-[80%] flex animate-in slide-in-from-right fade-in pointer-events-none">
                              <div className="h-full bg-gradient-to-r from-transparent to-[#181d2e] rounded-l-full border-y border-l border-white/10 shadow-2xl flex items-center pr-4 pl-8 gap-3">
                                   <div className="flex flex-col items-end">
                                       <span className="text-[7px] md:text-[9px] font-black text-white/50 uppercase tracking-[0.2em] leading-none">
-                                          {match.tvSettings?.showTeamStats === teamA.id ? 'Ataque Efectividad' : (match.tvSettings?.featuredPlayerMode === 'stats' ? 'Destacado' : 'Top Anotador')}
+                                          {activeTvSettings?.showTeamStats === teamA.id ? 'Ataque Efectividad' : (activeTvSettings?.featuredPlayerMode === 'stats' ? 'Destacado' : 'Top Anotador')}
                                       </span>
                                       <span className="text-[10px] md:text-sm font-black text-[#827DFF] uppercase tracking-widest leading-none mt-1">
-                                          {match.tvSettings?.showTeamStats === teamA.id ? 'Equipo A' : (()=>{
-                                              if (match.tvSettings?.featuredPlayerMode === 'stats') {
-                                                  const fp = teamA.players.find(p=>p.id===match.tvSettings?.featuredPlayerId);
+                                          {activeTvSettings?.showTeamStats === teamA.id ? 'Equipo A' : (()=>{
+                                              if (activeTvSettings?.featuredPlayerMode === 'stats') {
+                                                  const fp = teamA.players.find(p=>p.id===activeTvSettings?.featuredPlayerId);
                                                   return fp ? `#${fp.number} ${fp.name.split(' ')[0]}` : '';
                                               }
                                               let bestPlayer = 'NINGUNO'; let maxPts = 0;
@@ -1691,14 +1758,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                        <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                                           <path stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" strokeDasharray="50, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
                                           <path stroke="#827DFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(()=>{
-                                              if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
+                                              if(activeTvSettings?.showPlayerStats || activeTvSettings?.featuredPlayerMode === 'stats') {
                                                   let maxPts = 0;
                                                   const scores: Record<string, number> = {};
                                                   match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                       if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                   });
-                                                  if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
-                                                      return Math.min(50, ((scores[match.tvSettings.featuredPlayerId] || 0)/10)*50);
+                                                  if (activeTvSettings?.featuredPlayerMode === 'stats' && activeTvSettings.featuredPlayerId) {
+                                                      return Math.min(50, ((scores[activeTvSettings.featuredPlayerId] || 0)/10)*50);
                                                   }
                                                   Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
                                                   return Math.min(50, (maxPts/10)*50);
@@ -1712,14 +1779,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                           })()}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" className="transition-all duration-1000 ease-out"/>
                                        </svg>
                                        <span className="text-white font-black text-[10px] md:text-sm">{(()=>{
-                                            if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
+                                            if(activeTvSettings?.showPlayerStats || activeTvSettings?.featuredPlayerMode === 'stats') {
                                                 let maxPts = 0;
                                                 const scores: Record<string, number> = {};
                                                 match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamA.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                     if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                 });
-                                                if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
-                                                    const fpPts = scores[match.tvSettings.featuredPlayerId] || 0;
+                                                if (activeTvSettings?.featuredPlayerMode === 'stats' && activeTvSettings.featuredPlayerId) {
+                                                    const fpPts = scores[activeTvSettings.featuredPlayerId] || 0;
                                                     return fpPts + (fpPts===1?'pt':'pts');
                                                 }
                                                 Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
@@ -1738,21 +1805,21 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                     )}
 
                     {/* Right Attachment (Team B Stats) */}
-                    {(match.tvSettings?.showTeamStats === teamB.id || match.tvSettings?.showPlayerStats || (match.tvSettings?.featuredPlayerMode === 'stats' && teamB.players.some(p => p.id === match.tvSettings?.featuredPlayerId))) && !isVertical && (
+                    {(activeTvSettings?.showTeamStats === teamB.id || activeTvSettings?.showPlayerStats || (activeTvSettings?.featuredPlayerMode === 'stats' && teamB.players.some(p => p.id === activeTvSettings?.featuredPlayerId))) && !isVertical && (
                         <div className="absolute top-1/2 -translate-y-1/2 left-[100%] pl-2 h-[80%] flex animate-in slide-in-from-left fade-in pointer-events-none">
                              <div className="h-full bg-gradient-to-l from-transparent to-[#181d2e] rounded-r-full border-y border-r border-white/10 shadow-2xl flex items-center pl-4 pr-8 gap-3">
                                   <div className="relative w-8 h-8 md:w-12 md:h-12 flex items-center justify-center">
                                        <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                                           <path stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" strokeDasharray="50, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
                                           <path stroke="#4C8BFF" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(()=>{
-                                              if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
+                                              if(activeTvSettings?.showPlayerStats || activeTvSettings?.featuredPlayerMode === 'stats') {
                                                   let maxPts = 0;
                                                   const scores: Record<string, number> = {};
                                                   match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                       if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                   });
-                                                  if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
-                                                      return Math.min(50, ((scores[match.tvSettings.featuredPlayerId] || 0)/10)*50);
+                                                  if (activeTvSettings?.featuredPlayerMode === 'stats' && activeTvSettings.featuredPlayerId) {
+                                                      return Math.min(50, ((scores[activeTvSettings.featuredPlayerId] || 0)/10)*50);
                                                   }
                                                   Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
                                                   return Math.min(50, (maxPts/10)*50);
@@ -1766,14 +1833,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                           })()}, 100`} fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" className="transition-all duration-1000 ease-out"/>
                                        </svg>
                                        <span className="text-white font-black text-[10px] md:text-sm">{(()=>{
-                                            if(match.tvSettings?.showPlayerStats || match.tvSettings?.featuredPlayerMode === 'stats') {
+                                            if(activeTvSettings?.showPlayerStats || activeTvSettings?.featuredPlayerMode === 'stats') {
                                                 let maxPts = 0;
                                                 const scores: Record<string, number> = {};
                                                 match.sets.flatMap(s=>s.history).filter(h=>h.teamId===teamB.id && ['attack','block','ace'].includes(h.type)).forEach(h => {
                                                     if(h.playerId) { scores[h.playerId] = (scores[h.playerId] || 0) + 1; }
                                                 });
-                                                if (match.tvSettings?.featuredPlayerMode === 'stats' && match.tvSettings.featuredPlayerId) {
-                                                    const fpPts = scores[match.tvSettings.featuredPlayerId] || 0;
+                                                if (activeTvSettings?.featuredPlayerMode === 'stats' && activeTvSettings.featuredPlayerId) {
+                                                    const fpPts = scores[activeTvSettings.featuredPlayerId] || 0;
                                                     return fpPts + (fpPts===1?'pt':'pts');
                                                 }
                                                 Object.values(scores).forEach(pts => { if(pts>maxPts) maxPts=pts; });
@@ -1789,12 +1856,12 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                   </div>
                                   <div className="flex flex-col items-start">
                                       <span className="text-[7px] md:text-[9px] font-black text-white/50 uppercase tracking-[0.2em] leading-none">
-                                          {match.tvSettings?.showTeamStats === teamB.id ? 'Ataque Efectividad' : (match.tvSettings?.featuredPlayerMode === 'stats' ? 'Destacado' : 'Top Anotador')}
+                                          {activeTvSettings?.showTeamStats === teamB.id ? 'Ataque Efectividad' : (activeTvSettings?.featuredPlayerMode === 'stats' ? 'Destacado' : 'Top Anotador')}
                                       </span>
                                       <span className="text-[10px] md:text-sm font-black text-[#4C8BFF] uppercase tracking-widest leading-none mt-1">
-                                          {match.tvSettings?.showTeamStats === teamB.id ? 'Equipo B' : (()=>{
-                                              if (match.tvSettings?.featuredPlayerMode === 'stats') {
-                                                  const fp = teamB.players.find(p=>p.id===match.tvSettings?.featuredPlayerId);
+                                          {activeTvSettings?.showTeamStats === teamB.id ? 'Equipo B' : (()=>{
+                                              if (activeTvSettings?.featuredPlayerMode === 'stats') {
+                                                  const fp = teamB.players.find(p=>p.id===activeTvSettings?.featuredPlayerId);
                                                   return fp ? `#${fp.number} ${fp.name.split(' ')[0]}` : '';
                                               }
                                               let bestPlayer = 'NINGUNO'; let maxPts = 0;
@@ -1815,28 +1882,28 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
                     <div className="w-full h-full flex rounded shadow-2xl overflow-hidden font-sans">
                         
-                        {/* Team A Section */}
-                        <div className="flex-1 flex items-center justify-between pl-2 md:pl-4 pr-0 bg-[#252a3b] border-l-4 border-[#827DFF]">
+                        {/* Team A/Left Section */}
+                        <div className="flex-1 flex items-center justify-between pl-2 md:pl-4 pr-0 bg-[#252a3b]" style={{ borderLeft: `4px solid ${swapSides ? '#4C8BFF' : '#827DFF'}` }}>
                             <div className="flex flex-row items-center flex-1">
                                 {/* Logo */}
                                 <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-8 h-8 md:w-12 md:h-12 mr-2">
-                                    {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{teamA.name[0]}</div>}
-                                    {match.servingTeamId === teamA.id && <div className="absolute -top-1 -right-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
+                                    {(swapSides ? teamB : teamA).logoUrl ? <img src={(swapSides ? teamB : teamA).logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{(swapSides ? teamB : teamA).name[0]}</div>}
+                                    {(swapSides ? match.servingTeamId === teamB.id : match.servingTeamId === teamA.id) && <div className="absolute -top-1 -right-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
                                 </div>
                                 {/* Name */}
                                 <div className="flex-1 min-w-0 pr-4">
-                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{teamA.name}</h2>
+                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{(swapSides ? teamB : teamA).name}</h2>
                                     <div className="flex gap-1 mt-1">
                                         {Array.from({length: requiredWins}).map((_, i) => (
-                                            <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < winsA ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
+                                            <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < (swapSides ? winsB : winsA) ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
                                         ))}
                                     </div>
                                 </div>
                             </div>
                             {/* Score */}
                             <div className="bg-[#181d2e] h-full flex items-center justify-center px-4 md:px-8 border-l border-white/5 border-r border-[#0f172a]">
-                                <span className={`font-black text-[#827DFF] tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`}>
-                                    {match.scoreA}
+                                <span className={`font-black tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`} style={{ color: swapSides ? '#4C8BFF' : '#827DFF' }}>
+                                    {swapSides ? match.scoreB : match.scoreA}
                                 </span>
                             </div>
                         </div>
@@ -1852,28 +1919,28 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                             )}
                         </div>
 
-                        {/* Team B Section */}
-                        <div className="flex-1 flex items-center justify-between pr-2 md:pr-4 pl-0 bg-[#2b2a3b] border-r-4 border-[#4C8BFF] flex-row-reverse">
+                        {/* Team B/Right Section */}
+                        <div className="flex-1 flex items-center justify-between pr-2 md:pr-4 pl-0 bg-[#2b2a3b] flex-row-reverse" style={{ borderRight: `4px solid ${swapSides ? '#827DFF' : '#4C8BFF'}` }}>
                             <div className="flex flex-row-reverse items-center flex-1">
                                 {/* Logo */}
                                 <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-8 h-8 md:w-12 md:h-12 ml-2">
-                                    {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{teamB.name[0]}</div>}
-                                    {match.servingTeamId === teamB.id && <div className="absolute -top-1 -left-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
+                                    {(swapSides ? teamA : teamB).logoUrl ? <img src={(swapSides ? teamA : teamB).logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{(swapSides ? teamA : teamB).name[0]}</div>}
+                                    {(swapSides ? match.servingTeamId === teamA.id : match.servingTeamId === teamB.id) && <div className="absolute -top-1 -left-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
                                 </div>
                                 {/* Name */}
                                 <div className="flex-1 min-w-0 pl-4 flex flex-col items-end">
-                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{teamB.name}</h2>
+                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{(swapSides ? teamA : teamB).name}</h2>
                                     <div className="flex gap-1 mt-1 justify-end">
                                         {Array.from({length: requiredWins}).map((_, i) => (
-                                            <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < winsB ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
+                                            <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < (swapSides ? winsA : winsB) ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
                                         ))}
                                     </div>
                                 </div>
                             </div>
                             {/* Score */}
                             <div className="bg-[#181d2e] h-full flex items-center justify-center px-4 md:px-8 border-r border-white/5 border-l border-[#0f172a]">
-                                <span className={`font-black text-[#4C8BFF] tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`}>
-                                    {match.scoreB}
+                                <span className={`font-black tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`} style={{ color: swapSides ? '#827DFF' : '#4C8BFF' }}>
+                                    {swapSides ? match.scoreA : match.scoreB}
                                 </span>
                             </div>
                         </div>
