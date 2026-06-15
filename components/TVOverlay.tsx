@@ -535,7 +535,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
       {/* --- STINGER TRANSITION OVERLAY --- */}
       {stingerAnim !== 'idle' && (
-      <div className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-none rounded-full md:rounded-none ${isVertical ? 'rotate-90' : ''}`}>
+      <div key={stingerAnim} className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-none rounded-[100%] md:rounded-none ${isVertical ? 'rotate-90' : ''}`}>
           <div 
             style={{ 
                 animation: stingerAnim === 'in' 
@@ -774,62 +774,33 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                             </div>
                         </div>
 
-                        {/* Stats Rows or History Grid */}
-                        {(() => {
-                            const isGeneral = match.statsSetIndex === undefined;
-                            
-                            if (isGeneral) {
-                                return (
-                                    <div className="flex flex-col bg-[#1e3a8a] py-8">
-                                        <div className="flex justify-center gap-4 md:gap-8 flex-wrap px-4">
-                                            {match.sets.map((s, i) => {
-                                                const sFinished = i < match.currentSet - 1 || matchEnded || (isSetFinished && i === match.currentSet - 1);
-                                                if (!sFinished && i !== match.currentSet - 1) return null; // Don't show unplayed sets
-                                                return (
-                                                    <div key={i} className={`flex flex-col items-center px-6 py-4 rounded-xl border-4 shadow-xl ${sFinished ? 'bg-black/60 border-white/20' : 'bg-[#dc2626] border-white/50 animate-pulse'}`}>
-                                                        <div className="text-xs text-white/70 uppercase font-black tracking-widest mb-2">Set {i+1}</div>
-                                                        <div className="text-4xl font-black text-white flex items-center gap-2">
-                                                            <span className={s.scoreA > s.scoreB ? 'text-yellow-400' : ''}>{s.scoreA}</span>
-                                                            <span className="text-white/30 text-xl">-</span>
-                                                            <span className={s.scoreB > s.scoreA ? 'text-yellow-400' : ''}>{s.scoreB}</span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
+                        {/* Stats Rows */}
+                        <div className="flex flex-col">
+                            {[
+                                { l: sets.filter(s => s.scoreA > s.scoreB).length, label: 'SETS', r: sets.filter(s => s.scoreB > s.scoreA).length },
+                                { l: statsA.attacks, label: 'ATTACKS', r: statsB.attacks },
+                                { l: statsA.blocks, label: 'BLOCKS', r: statsB.blocks },
+                                { l: statsA.aces, label: 'SERVES', r: statsB.aces },
+                                { l: statsA.errors, label: 'OPPONENT ERRORS', r: statsB.errors }
+                            ].map((row, idx) => (
+                                <div key={idx} className={`flex h-12 items-center border-b border-white/10 ${idx % 2 === 0 ? 'bg-[#dc2626]' : 'bg-[#1e3a8a]'}`}>
+                                    {/* Team A Value */}
+                                    <div className="flex-1 text-center">
+                                        <span className="text-white font-black text-2xl drop-shadow-sm">{row.l}</span>
                                     </div>
-                                );
-                            }
 
-                            return (
-                            <div className="flex flex-col">
-                                {[
-                                    { l: sets.filter(s => s.scoreA > s.scoreB).length, label: 'SETS', r: sets.filter(s => s.scoreB > s.scoreA).length },
-                                    { l: statsA.attacks, label: 'ATTACKS', r: statsB.attacks },
-                                    { l: statsA.blocks, label: 'BLOCKS', r: statsB.blocks },
-                                    { l: statsA.aces, label: 'SERVES', r: statsB.aces },
-                                    { l: statsA.errors, label: 'OPPONENT ERRORS', r: statsB.errors }
-                                ].map((row, idx) => (
-                                    <div key={idx} className={`flex h-12 items-center border-b border-white/10 ${idx % 2 === 0 ? 'bg-[#dc2626]' : 'bg-[#1e3a8a]'}`}>
-                                        {/* Team A Value */}
-                                        <div className="flex-1 text-center">
-                                            <span className="text-white font-black text-2xl drop-shadow-sm">{row.l}</span>
-                                        </div>
-
-                                        {/* Label */}
-                                        <div className="w-56 text-center">
-                                            <span className="text-white font-bold text-base uppercase tracking-widest opacity-100 drop-shadow-md">{row.label}</span>
-                                        </div>
-
-                                        {/* Team B Value */}
-                                        <div className="flex-1 text-center">
-                                            <span className="text-white font-black text-2xl drop-shadow-sm">{row.r}</span>
-                                        </div>
+                                    {/* Label */}
+                                    <div className="w-56 text-center">
+                                        <span className="text-white font-bold text-base uppercase tracking-widest opacity-100 drop-shadow-md">{row.label}</span>
                                     </div>
-                                ))}
-                            </div>
-                            );
-                        })()}
+
+                                    {/* Team B Value */}
+                                    <div className="flex-1 text-center">
+                                        <span className="text-white font-black text-2xl drop-shadow-sm">{row.r}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -881,18 +852,10 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
       {/* VERSUS OVERLAY (PLAYER vs PLAYER) */}
       {!!activeTvSettings?.showVersus && (() => {
-          let pA = activeTvSettings.featuredPlayerId ? teamA.players.find(p => p.id === activeTvSettings?.featuredPlayerId) : undefined;
+          let pA: typeof teamA.players[0] | undefined = undefined;
           let pB: typeof teamA.players[0] | undefined = undefined;
-          
-          if (!pA) {
-              pA = teamB.players.find(p => p.id === activeTvSettings?.featuredPlayerId);
-              if (pA) {
-                 // Swap if selected player is from team B
-                 pB = pA;
-                 pA = undefined;
-              }
-          }
 
+          // FIRST, calculate scores for ALL players to make informed decisions
           const currSet = match.sets[match.currentSet - 1] || { history: [] };
           const scoresA:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
           const scoresB:Record<string, {pts:number, att:number, blk:number, srv:number, attTot:number}> = {};
@@ -912,25 +875,49 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                   }
               }
           });
+          
+          if (typeof activeTvSettings.showVersus === 'string' && activeTvSettings.showVersus !== 'auto') {
+               // Find best by specific role
+               const roleFilter = activeTvSettings.showVersus;
+               let candidatesA = teamA.players.filter(p => p.role === roleFilter);
+               let candidatesB = teamB.players.filter(p => p.role === roleFilter);
+               
+               // Sort by highest points
+               candidatesA.sort((a,b) => (scoresA[b.id]?.pts || 0) - (scoresA[a.id]?.pts || 0));
+               candidatesB.sort((a,b) => (scoresB[b.id]?.pts || 0) - (scoresB[a.id]?.pts || 0));
+               
+               pA = candidatesA[0] || teamA.players[0]; // fallback
+               pB = candidatesB[0] || teamB.players[0]; // fallback
+          } else {
+              pA = activeTvSettings.featuredPlayerId ? teamA.players.find(p => p.id === activeTvSettings?.featuredPlayerId) : undefined;
+              if (!pA) {
+                  pA = teamB.players.find(p => p.id === activeTvSettings?.featuredPlayerId);
+                  if (pA) {
+                     // Swap if selected player is from team B
+                     pB = pA;
+                     pA = undefined;
+                  }
+              }
 
-          // Fallbacks for Player A and B
-          if (!pA && !pB) {
-              let bestAId = teamA.players[0]?.id; let maxA = -1;
-              Object.entries(scoresA).forEach(([id, st]) => { if(st.pts > maxA) { maxA=st.pts; bestAId=id; }});
-              pA = teamA.players.find(p => p.id === bestAId) || teamA.players[0];
-          }
+              // Fallbacks for Player A and B
+              if (!pA && !pB) {
+                  let bestAId = teamA.players[0]?.id; let maxA = -1;
+                  Object.entries(scoresA).forEach(([id, st]) => { if(st.pts > maxA) { maxA=st.pts; bestAId=id; }});
+                  pA = teamA.players.find(p => p.id === bestAId) || teamA.players[0];
+              }
 
-          if (pA && !pB) {
-              // Find best matching role on Team B
-              const roleMatches = teamB.players.filter(p => p.role === pA?.role);
-              let bestBId = roleMatches[0]?.id || teamB.players[0]?.id; let maxB = -1;
-              roleMatches.forEach(p => { if((scoresB[p.id]?.pts || 0) > maxB) { maxB=(scoresB[p.id]?.pts || 0); bestBId=p.id; }});
-              pB = teamB.players.find(p => p.id === bestBId) || teamB.players[0];
-          } else if (pB && !pA) {
-              const roleMatches = teamA.players.filter(p => p.role === pB?.role);
-              let bestAId = roleMatches[0]?.id || teamA.players[0]?.id; let maxA = -1;
-              roleMatches.forEach(p => { if((scoresA[p.id]?.pts || 0) > maxA) { maxA=(scoresA[p.id]?.pts || 0); bestAId=p.id; }});
-              pA = teamA.players.find(p => p.id === bestAId) || teamA.players[0];
+              if (pA && !pB) {
+                  // Find best matching role on Team B
+                  const roleMatches = teamB.players.filter(p => p.role === pA?.role);
+                  let bestBId = roleMatches[0]?.id || teamB.players[0]?.id; let maxB = -1;
+                  roleMatches.forEach(p => { if((scoresB[p.id]?.pts || 0) > maxB) { maxB=(scoresB[p.id]?.pts || 0); bestBId=p.id; }});
+                  pB = teamB.players.find(p => p.id === bestBId) || teamB.players[0];
+              } else if (pB && !pA) {
+                  const roleMatches = teamA.players.filter(p => p.role === pB?.role);
+                  let bestAId = roleMatches[0]?.id || teamA.players[0]?.id; let maxA = -1;
+                  roleMatches.forEach(p => { if((scoresA[p.id]?.pts || 0) > maxA) { maxA=(scoresA[p.id]?.pts || 0); bestAId=p.id; }});
+                  pA = teamA.players.find(p => p.id === bestAId) || teamA.players[0];
+              }
           }
 
           if (!pA || !pB) return null;
@@ -1026,49 +1013,81 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       {/* HAWK EYE EFFECT */}
       {activeTvSettings?.hawkEyeStatus && (
           <div className="absolute bottom-8 left-8 z-40 pointer-events-none flex items-center justify-center animate-in zoom-in slide-in-from-left duration-500">
-              <div className="flex flex-col items-center justify-center gap-2 relative z-10 w-[300px] h-[340px] border-2 border-blue-500/50 bg-[#0f111a]/95 shadow-[0_0_30px_rgba(0,0,0,0.9)] rounded-xl overflow-hidden pointer-events-auto">
-                  <div className="absolute top-0 w-full h-1 bg-blue-400"></div>
+              <div className="flex flex-col items-center justify-center gap-2 relative z-10 w-[300px] h-[340px] border-2 border-slate-500/50 bg-[#0f111a]/95 shadow-[0_0_30px_rgba(0,0,0,0.9)] rounded-xl overflow-hidden pointer-events-auto">
+                  <div className="absolute top-0 w-full h-1 bg-blue-500"></div>
                   
                   <h2 className="text-xl font-black text-white italic tracking-[0.2em] mt-4 mb-2">CHALLENGE</h2>
                   
-                  <div className="relative w-[280px] h-[180px] perspective-[600px] flex items-center justify-center transform-style-3d overflow-hidden rounded border border-white/5 bg-black/50">
-                        {/* The Court Line Floor Simulation */}
-                        <div className="absolute inset-x-4 bottom-8 h-32 bg-orange-600/60 border-t-4 border-white origin-bottom rotate-x-[60deg]"></div>
+                  <div className="relative w-[280px] h-[180px] overflow-hidden bg-[#2582b5] rounded border border-white/10 shadow-inner">
+                        {/* The Line */}
+                        <div className="absolute top-[35%] w-full h-full bg-[#d96a32] border-t-[12px] border-white flex flex-col items-center shadow-[inset_0_10px_20px_rgba(0,0,0,0.2)]"></div>
+                        
+                        <div className="absolute bottom-[65%] w-full flex justify-center pb-2">
+                             <span className="text-white/40 font-black uppercase tracking-[0.3em] text-2xl">OUT</span>
+                        </div>
+                        <div className="absolute top-[40%] w-full flex justify-center pt-2">
+                             <span className="text-white/40 font-black uppercase tracking-[0.3em] text-2xl">IN</span>
+                        </div>
 
-                        {/* OUT area */}
-                        <div className="absolute inset-x-4 bottom-[calc(2rem+8rem)] h-32 bg-blue-900/40 origin-bottom rotate-x-[60deg]"></div>
-
-                        {/* The Ball Animation (Adjusted for smaller size) */}
+                        {/* The Ball Animation */}
                         {activeTvSettings.hawkEyeStatus === 'in' ? (
                             <>
-                                <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-8 h-4 bg-black/80 rounded-full blur-sm animate-[shadowScaleIn_2s_ease-in_forwards]"></div>
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-300 rounded-full shadow-[inset_-4px_-4px_8px_rgba(0,0,0,0.5),0_0_10px_rgba(253,224,71,0.8)] flex items-center justify-center animate-[bounceInLine_2s_ease-out_forwards]" style={{animation: 'dropIn 2s ease-out forwards'}}>
+                                {/* Target impact mark */}
+                                <div className="absolute top-[30%] left-[45%] w-8 h-8 rounded-full bg-green-500/30 opacity-0 shadow-[0_0_20px_#4ade80]" style={{animation: 'showMark 2s forwards 0.5s'}}></div>
+                                
+                                <div className="absolute w-10 h-10 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] flex items-center justify-center left-[43.5%]" style={{animation: 'dropInBall 2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'}}>
                                     <div className="w-full h-[1px] bg-black/20 rotate-45"></div>
                                     <div className="w-full h-[1px] bg-black/20 -rotate-45 absolute"></div>
                                 </div>
-                                <style>{`@keyframes dropIn { 0% { transform: translate(-50%, -150px) scale(0.5); } 100% { transform: translate(-50%, 105px) scale(1); } }`}</style>
-                                <div className="absolute top-[125px] left-1/2 -translate-x-1/2 w-16 h-8 border-2 border-yellow-400 rounded-[50%] animate-[ripple_1s_ease-out_2s_forwards] opacity-0"></div>
+                                <div className="absolute top-[30%] left-[45%] w-8 h-8 border-2 border-white rounded-full opacity-0" style={{animation: 'ripple 1s ease-out 0.6s forwards'}}></div>
                             </>
                         ) : (
                             <>
-                                <div className="absolute bottom-[35%] left-1/2 -translate-x-1/2 w-8 h-4 bg-black/80 rounded-full blur-sm animate-[shadowScaleOut_2s_ease-in_forwards]"></div>
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-300 rounded-full shadow-[inset_-4px_-4px_8px_rgba(0,0,0,0.5),0_0_10px_rgba(253,224,71,0.8)] flex items-center justify-center animate-[bounceOutLine_2s_ease-out_forwards]" style={{animation: 'dropOut 2s ease-out forwards'}}>
+                                {/* Target impact mark */}
+                                <div className="absolute top-[15%] left-[55%] w-8 h-8 rounded-full bg-red-500/30 opacity-0 shadow-[0_0_20px_#ef4444]" style={{animation: 'showMark 2s forwards 0.5s'}}></div>
+                                
+                                <div className="absolute w-10 h-10 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] flex items-center justify-center left-[53.5%]" style={{animation: 'dropOutBall 2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'}}>
                                     <div className="w-full h-[1px] bg-black/20 rotate-45"></div>
                                     <div className="w-full h-[1px] bg-black/20 -rotate-45 absolute"></div>
                                 </div>
-                                <style>{`@keyframes dropOut { 0% { transform: translate(-50%, -150px) scale(0.5); } 100% { transform: translate(-50%, 75px) scale(1); } }`}</style>
-                                <div className="absolute top-[95px] left-1/2 -translate-x-1/2 w-16 h-8 border-2 border-yellow-400 rounded-[50%] animate-[ripple_1s_ease-out_2s_forwards] opacity-0"></div>
+                                <div className="absolute top-[15%] left-[55%] w-8 h-8 border-2 border-white rounded-full opacity-0" style={{animation: 'ripple 1s ease-out 0.6s forwards'}}></div>
                             </>
                         )}
+                        <style>{`
+                          @keyframes dropInBall { 
+                              0% { top: -100px; transform: scale(5) rotate(0deg); opacity: 0; filter: blur(10px); } 
+                              10% { opacity: 1; }
+                              40% { top: 30%; transform: scale(0.9) rotate(360deg); filter: blur(0px); }
+                              50% { top: 25%; transform: scale(1.1) rotate(450deg); }
+                              60% { top: 30%; transform: scale(1) rotate(540deg); }
+                              100% { top: 30%; transform: scale(1) rotate(540deg); }
+                          }
+                          @keyframes dropOutBall { 
+                              0% { top: -100px; transform: scale(5) rotate(0deg); opacity: 0; filter: blur(10px); } 
+                              10% { opacity: 1; }
+                              40% { top: 15%; transform: scale(0.9) rotate(360deg); filter: blur(0px); }
+                              50% { top: 10%; transform: scale(1.1) rotate(450deg); }
+                              60% { top: 15%; transform: scale(1) rotate(540deg); }
+                              100% { top: 15%; transform: scale(1) rotate(540deg); }
+                          }
+                          @keyframes showMark {
+                              0% { opacity: 0; transform: scale(0.5); }
+                              100% { opacity: 1; transform: scale(1); }
+                          }
+                          @keyframes ripple {
+                              0% { transform: scale(0.5); opacity: 1; border-width: 4px; }
+                              100% { transform: scale(3); opacity: 0; border-width: 0px; }
+                          }
+                        `}</style>
                   </div>
 
                   {activeTvSettings.hawkEyeStatus === 'in' ? (
-                      <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2">
+                      <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2 mt-2">
                           <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-green-300 to-green-600 drop-shadow-[0_0_20px_rgba(34,197,94,0.8)] leading-none">IN</h1>
                           <p className="text-green-400 font-bold text-xs tracking-[0.3em] mt-1">DENTRO</p>
                       </div>
                   ) : (
-                      <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2">
+                      <div className="animate-in fade-in zoom-in delay-1000 duration-500 fill-mode-both flex flex-col items-center pb-2 mt-2">
                           <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-red-400 to-red-600 drop-shadow-[0_0_20px_rgba(220,38,38,0.8)] leading-none">OUT</h1>
                           <p className="text-red-400 font-bold text-xs tracking-[0.3em] mt-1">FUERA</p>
                       </div>
@@ -1563,123 +1582,47 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
       {/* --- MATCH STATISTICS OVERLAY --- */}
-      {activeTvSettings?.showMatchStatsExt && (
-          <div className="fixed inset-0 z-40 flex flex-col pointer-events-none items-center justify-center p-4 bg-transparent animate-in zoom-in duration-500">
-             <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#1a1440]/95 to-[#0f0b29]/95 border-y-4 border-[#4C8BFF] rounded overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
-                 <div className="flex flex-col pt-6 pb-2 relative">
-                     <div className="absolute top-2 left-4 text-[#827DFF] font-black italic text-xl opacity-50 tracking-tighter">VOLLEYTV</div>
-                     <div className="text-center w-full text-white/70 font-black tracking-[0.3em] text-sm mb-4">MATCH STATISTICS</div>
-                     {/* Teams and Score Header */}
-                     <div className="flex items-center justify-between px-16 mb-8">
-                         <div className="flex items-center gap-6">
-                            <div className="w-16 h-10 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center">
-                                {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black">{teamA.name.substring(0,3).toUpperCase()}</div>}
-                            </div>
-                            <span className="text-6xl font-black text-white italic tracking-tighter drop-shadow-lg">{teamA.name.substring(0,3).toUpperCase()}</span>
-                         </div>
-                         <div className="text-5xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">
-                             {match.sets.filter(s=>s.scoreA > s.scoreB).length} - {match.sets.filter(s=>s.scoreB > s.scoreA).length}
-                         </div>
-                         <div className="flex items-center gap-6 text-right flex-row-reverse">
-                            <div className="w-16 h-10 bg-white border-2 border-white/20 rounded shadow overflow-hidden flex items-center justify-center">
-                                {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-full h-full object-cover"/> : <div className="text-black font-black">{teamB.name.substring(0,3).toUpperCase()}</div>}
-                            </div>
-                            <span className="text-6xl font-black text-white italic tracking-tighter drop-shadow-lg">{teamB.name.substring(0,3).toUpperCase()}</span>
-                         </div>
-                     </div>
-                     {/* Stats Rows */}
-                     <div className="flex flex-col gap-1.5 px-4 pb-6">
-                         {/* HEADER */}
-                         <div className="flex justify-center items-center text-xs font-black text-white/50 px-[20%] mb-1">
-                             <span>TOTAL MATCH</span>
-                         </div>
-                         {(() => {
-                             // Calculation of ALL sets stats
-                             const allActsA = match.sets.flatMap(s => (s.history || []).filter(h => h.teamId === teamA.id));
-                             const allActsB = match.sets.flatMap(s => (s.history || []).filter(h => h.teamId === teamB.id));
-
-                             const ptsA = match.sets.reduce((sum, s) => sum + s.scoreA, 0);
-                             const ptsB = match.sets.reduce((sum, s) => sum + s.scoreB, 0);
-                             
-                             const attA = allActsA.filter(h=>h.type==='attack').length;
-                             const attB = allActsB.filter(h=>h.type==='attack').length;
-
-                             const blkA = allActsA.filter(h=>h.type==='block').length;
-                             const blkB = allActsB.filter(h=>h.type==='block').length;
-
-                             const srvA = allActsA.filter(h=>h.type==='ace').length;
-                             const srvB = allActsB.filter(h=>h.type==='ace').length;
-
-                             const errOPA = allActsB.filter(h=>h.type==='opponent_error').length; // points for A due to B's error
-                             const errOPB = allActsA.filter(h=>h.type==='opponent_error').length; // points for B due to A's error
-
-                             const rows = [
-                                 { label: 'TOTAL POINTS', l: ptsA, r: ptsB, max: Math.max(ptsA, ptsB) || 75 },
-                                 { label: 'ATTACKS', l: attA, r: attB, max: Math.max(attA, attB) || 45 },
-                                 { label: 'BLOCKS', l: blkA, r: blkB, max: Math.max(blkA, blkB) || 15 },
-                                 { label: 'SERVES', l: srvA, r: srvB, max: Math.max(srvA, srvB) || 15 },
-                                 { label: 'OPPONENT ERRORS', l: errOPA, r: errOPB, max: Math.max(errOPA, errOPB) || 30 },
-                             ];
-
-                             return rows.map((r, idx) => {
-                                 const total = r.l + r.r;
-                                 const pctL = total > 0 ? Math.round((r.l / total) * 100) : 0;
-                                 const pctR = total > 0 ? Math.round((r.r / total) * 100) : 0;
-                                 
-                                 return (
-                                 <div key={idx} className="flex justify-center items-center w-full">
-                                     <div className="flex-1 flex justify-end items-center px-4 relative h-8">
-                                         <div className="absolute top-1/2 -translate-y-1/2 right-0 h-4 bg-gradient-to-r from-transparent to-blue-600 z-0" style={{ width: `${(r.l / Math.max(1, r.max)) * 100}%`}}></div>
-                                         <span className="relative z-10 text-white font-black text-lg bg-[#302766] px-3 py-0.5 rounded shadow-lg flex items-center gap-2">
-                                            {r.l} <span className="text-[10px] text-blue-300 opacity-70">({pctL}%)</span>
-                                         </span>
-                                     </div>
-                                     <div className="w-1/4 text-center text-white/80 font-black tracking-widest text-sm bg-black/20 py-1">
-                                         {r.label}
-                                     </div>
-                                     <div className="flex-1 flex justify-start items-center px-4 relative h-8">
-                                         <div className="absolute top-1/2 -translate-y-1/2 left-0 h-4 bg-gradient-to-l from-transparent to-red-600 z-0" style={{ width: `${(r.r / Math.max(1, r.max)) * 100}%`}}></div>
-                                         <span className="relative z-10 text-white font-black text-lg bg-[#66273c] px-3 py-0.5 rounded shadow-lg flex items-center gap-2 flex-row-reverse">
-                                            {r.r} <span className="text-[10px] text-red-300 opacity-70">({pctR}%)</span>
-                                         </span>
-                                     </div>
-                                 </div>
-                             )});
-                         })()}
-                     </div>
-                 </div>
-             </div>
-          </div>
-      )}
-
-
-
-      {/* --- MATCH FINISHED SUMMARY --- */}
-      {matchEnded && winner ? (
-          <div className="relative z-10 w-full max-w-4xl mx-auto mb-10 animate-in slide-in-from-bottom-10 fade-in duration-700 mt-20 md:mt-0">
-             <div className="bg-gradient-to-b from-slate-900/95 to-blue-950/95 text-white rounded-xl overflow-hidden shadow-2xl border border-white/20 backdrop-blur-xl m-4">
+      {(activeTvSettings?.showMatchStatsExt || (matchEnded && winner)) ? (
+          <div className="relative z-40 w-full max-w-4xl mx-auto mb-10 animate-in slide-in-from-bottom-10 fade-in duration-700 mt-20 md:mt-0">
+             <div className="bg-gradient-to-b from-slate-900/95 to-blue-950/95 text-white rounded-xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] border border-white/20 backdrop-blur-xl m-4">
                  <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-4 text-center border-b border-white/10">
-                     <h2 className="text-2xl font-black uppercase tracking-widest italic">Resultado Final</h2>
+                     <h2 className="text-2xl font-black uppercase tracking-widest italic">{matchEnded ? 'RESULTADO FINAL' : 'ESTADÍSTICAS DEL PARTIDO'}</h2>
                  </div>
                  
                  <div className="p-8 flex flex-col items-center">
-                     <div className="text-sm font-bold text-blue-200 uppercase tracking-widest mb-4">Ganador del Partido</div>
-                     <div className="flex items-center gap-6 mb-8 transform scale-125">
-                         {winner.logoUrl && <img src={winner.logoUrl} className="w-20 h-20 object-contain bg-white rounded-full p-2 shadow-lg" alt="" />}
-                         <div className="text-5xl font-black text-white italic drop-shadow-lg uppercase">{winner.name}</div>
+                     {(matchEnded && winner) && <div className="text-sm font-bold text-blue-200 uppercase tracking-widest mb-4">Ganador del Partido</div>}
+                     <div className={`flex items-center gap-6 mb-8 transform scale-125 transition-all`}>
+                         {(matchEnded && winner) ? (
+                             <>
+                                {winner.logoUrl && <img src={winner.logoUrl} className="w-20 h-20 object-contain bg-white rounded-full p-2 shadow-lg" alt="" />}
+                                <div className="text-5xl font-black text-white italic drop-shadow-lg uppercase">{winner.name}</div>
+                             </>
+                         ) : (
+                             <>
+                                {teamA.logoUrl ? <img src={teamA.logoUrl} className="w-16 h-16 object-contain bg-white rounded-full p-2 shadow-lg" /> : <div className="text-3xl font-black">{teamA.name.substring(0,3).toUpperCase()}</div>}
+                                <div className="text-4xl font-black text-white italic drop-shadow-lg uppercase">{teamA.name}</div>
+                                <div className="text-4xl text-white/50 px-4">VS</div>
+                                <div className="text-4xl font-black text-white italic drop-shadow-lg uppercase">{teamB.name}</div>
+                                {teamB.logoUrl ? <img src={teamB.logoUrl} className="w-16 h-16 object-contain bg-white rounded-full p-2 shadow-lg" /> : <div className="text-3xl font-black">{teamB.name.substring(0,3).toUpperCase()}</div>}
+                             </>
+                         )}
                      </div>
                      
                      <div className="flex gap-2 mb-8">
-                         {sets.map((s, i) => (
-                             (s.scoreA > 0 || s.scoreB > 0) && (
-                                 <div key={i} className="flex flex-col items-center bg-black/40 px-4 py-2 rounded border border-white/10">
-                                     <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Set {i+1}</div>
-                                     <div className={`text-xl font-mono font-bold ${matchEnded ? (winner.id === teamA.id ? (s.scoreA > s.scoreB ? 'text-yellow-400' : 'text-white') : (s.scoreB > s.scoreA ? 'text-yellow-400' : 'text-white')) : 'text-white'}`}>
-                                         {s.scoreA}-{s.scoreB}
+                         {sets.map((s, i) => {
+                             const isSetPlayed = s.scoreA > 0 || s.scoreB > 0 || (i <= match.currentSet - 1);
+                             if (!isSetPlayed) return null;
+                             return (
+                                 <div key={i} className="flex flex-col items-center bg-black/40 px-6 py-4 rounded-xl border-2 border-white/10 shadow-lg">
+                                     <div className="text-xs text-gray-400 uppercase font-bold mb-2">Set {i+1}</div>
+                                     <div className={`text-4xl font-mono font-black ${matchEnded ? (winner?.id === teamA.id ? (s.scoreA > s.scoreB ? 'text-yellow-400' : 'text-white') : (s.scoreB > s.scoreA ? 'text-yellow-400' : 'text-white')) : 'text-white'}`}>
+                                         <span className={s.scoreA > s.scoreB ? 'text-yellow-400 drop-shadow-md' : 'text-white'}>{s.scoreA}</span>
+                                         <span className="text-white/30 px-2">-</span>
+                                         <span className={s.scoreB > s.scoreA ? 'text-yellow-400 drop-shadow-md' : 'text-white'}>{s.scoreB}</span>
                                      </div>
                                  </div>
-                             )
-                         ))}
+                             );
+                         })}
                      </div>
                  </div>
              </div>

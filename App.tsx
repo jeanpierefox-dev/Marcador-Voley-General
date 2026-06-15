@@ -435,12 +435,15 @@ export const App: React.FC = () => {
       });
   };
 
-  const handleDeleteTournament = async () => {
-      if (!activeTournamentId || currentUser?.role !== 'ADMIN') return;
+  const handleDeleteTournament = async (id?: string) => {
+      const targetId = id || activeTournamentId;
+      if (!targetId || currentUser?.role !== 'ADMIN') return;
       if (!confirm("⚠️ ¿Borrar Torneo?")) return;
-      const updatedList = tournaments.filter(t => t.id !== activeTournamentId);
-      setActiveTournamentId(null);
-      setCurrentView('lobby');
+      const updatedList = tournaments.filter(t => t.id !== targetId);
+      if (activeTournamentId === targetId) {
+          setActiveTournamentId(null);
+          setCurrentView('lobby');
+      }
       setTournaments(updatedList);
       await pushData('tournaments', updatedList);
   };
@@ -1280,18 +1283,25 @@ export const App: React.FC = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {tournaments.map(t => (
-                      <div key={t.id} onClick={() => { setActiveTournamentId(t.id); setCurrentView('dashboard'); }} className="bg-corp-panel border border-white/10 rounded-xl overflow-hidden hover:border-vnl-accent/50 transition cursor-pointer group">
-                          <div className="h-32 bg-gradient-to-br from-blue-900/40 to-black relative flex items-center justify-center p-4">
-                              {t.logoUrl ? <img src={t.logoUrl} className="h-full w-full object-contain drop-shadow-lg group-hover:scale-110 transition duration-500" /> : <span className="text-6xl group-hover:scale-110 transition duration-500">🏆</span>}
-                          </div>
-                          <div className="p-4">
-                              <h3 className="text-xl font-black text-white uppercase italic tracking-tight">{t.name}</h3>
-                              <p className="text-xs text-slate-400 font-bold uppercase mt-1">{t.teams.length} Equipos • {t.fixtures?.length || 0} Partidos</p>
-                              <div className="mt-4 flex justify-between items-center">
-                                  <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-slate-300">{new Date(t.startDate).toLocaleDateString()}</span>
-                                  <span className="text-vnl-accent text-xs font-bold uppercase tracking-widest group-hover:translate-x-1 transition">Ver Panel →</span>
+                      <div key={t.id} className="relative group">
+                          <div onClick={() => { setActiveTournamentId(t.id); setCurrentView('dashboard'); }} className="bg-corp-panel border border-white/10 rounded-xl overflow-hidden hover:border-vnl-accent/50 transition cursor-pointer h-full">
+                              <div className="h-32 bg-gradient-to-br from-blue-900/40 to-black relative flex items-center justify-center p-4">
+                                  {t.logoUrl ? <img src={t.logoUrl} className="h-full w-full object-contain drop-shadow-lg group-hover:scale-110 transition duration-500" /> : <span className="text-6xl group-hover:scale-110 transition duration-500">🏆</span>}
+                              </div>
+                              <div className="p-4">
+                                  <h3 className="text-xl font-black text-white uppercase italic tracking-tight">{t.name}</h3>
+                                  <p className="text-xs text-slate-400 font-bold uppercase mt-1">{t.teams.length} Equipos • {t.fixtures?.length || 0} Partidos</p>
+                                  <div className="mt-4 flex justify-between items-center">
+                                      <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-slate-300">{new Date(t.startDate).toLocaleDateString()}</span>
+                                      <span className="text-vnl-accent text-xs font-bold uppercase tracking-widest group-hover:translate-x-1 transition">Ver Panel →</span>
+                                  </div>
                               </div>
                           </div>
+                          {isAdmin && (
+                              <button onClick={(e) => { e.stopPropagation(); handleDeleteTournament(t.id); }} className="absolute top-2 right-2 bg-red-600/80 hover:bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-10 shadow-lg" title="Eliminar torneo">
+                                  🗑️
+                              </button>
+                          )}
                       </div>
                   ))}
                   {tournaments.length === 0 && (
@@ -1325,7 +1335,7 @@ export const App: React.FC = () => {
                        {isAdmin && (
                            <>
                                <button onClick={handleOpenEditTournament} className="bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-500/30 px-4 py-2 rounded text-xs font-bold uppercase tracking-widest transition">Editar</button>
-                               <button onClick={handleDeleteTournament} className="bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-500/30 px-4 py-2 rounded text-xs font-bold uppercase tracking-widest transition">Eliminar</button>
+                               <button onClick={() => handleDeleteTournament()} className="bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-500/30 px-4 py-2 rounded text-xs font-bold uppercase tracking-widest transition">Eliminar</button>
                            </>
                        )}
                    </div>
@@ -1522,8 +1532,8 @@ export const App: React.FC = () => {
                                                 Stats Set (%)
                                             </button>
                                             <button 
-                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showMatchStatsExt: !(prev.tvSettings?.showMatchStatsExt)}} : null)} 
-                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.tvSettings?.showMatchStatsExt ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                                                onClick={() => updateLiveMatch(prev => prev ? {...prev, showStats: !(prev.showStats && prev.statsSetIndex === undefined), statsSetIndex: undefined} : null)} 
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${liveMatch.showStats && liveMatch.statsSetIndex === undefined ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}
                                             >
                                                 Stats General
                                             </button>
@@ -1639,12 +1649,23 @@ export const App: React.FC = () => {
                                                 >
                                                     Al Marcador
                                                 </button>
-                                                <button
-                                                    onClick={() => updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showVersus: !(prev.tvSettings?.showVersus)}} : null)}
-                                                    className={`flex-1 py-2 rounded text-[10px] font-black uppercase transition ${liveMatch.tvSettings?.showVersus ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]' : 'bg-slate-800 text-purple-400 hover:bg-slate-700'}`}
-                                                >
-                                                    Versus
-                                                </button>
+                                                <div className="flex-1 relative">
+                                                    <select
+                                                        value={liveMatch.tvSettings?.showVersus ? (typeof liveMatch.tvSettings.showVersus === 'string' ? liveMatch.tvSettings.showVersus : 'auto') : ''}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            updateLiveMatch(prev => prev ? {...prev, tvSettings: {...(prev.tvSettings || {style:'horizontal'}), showVersus: val === '' ? false : (val === 'auto' ? true : val)}} : null);
+                                                        }}
+                                                        className={`w-full py-2 px-1 rounded text-[10px] font-black uppercase transition appearance-none text-center cursor-pointer ${liveMatch.tvSettings?.showVersus ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]' : 'bg-slate-800 text-purple-400 hover:bg-slate-700'}`}
+                                                    >
+                                                        <option value="">Off Versus</option>
+                                                        <option value="auto">Vs Auto (Jugador)</option>
+                                                        <option value="Punta">Vs Puntas</option>
+                                                        <option value="Opuesto">Vs Opuestos</option>
+                                                        <option value="Central">Vs Centrales</option>
+                                                        <option value="Libero">Vs Líberos</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

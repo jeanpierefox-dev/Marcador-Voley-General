@@ -138,7 +138,7 @@ export interface LiveMatchState {
     showTeamStats?: boolean | string;
     featuredPlayerId?: string;
     featuredPlayerMode?: 'presentation' | 'stats' | null;
-    showVersus?: boolean;
+    showVersus?: boolean | string;
     showServeSpeed?: boolean;
     triggerSetPoint?: number;
     triggerMatchPoint?: number;

@@ -31,7 +31,7 @@ export const RotationView: React.FC<RotationViewProps> = ({ teamA, teamB, rotati
                     players={rotationA} 
                     serving={false} 
                     teamName={teamA.name} 
-                    variant="default"
+                    variant="presentation"
                     isVertical={false} // Always horizontal inside the view (rotated or not)
                 />
             </div>
@@ -42,7 +42,7 @@ export const RotationView: React.FC<RotationViewProps> = ({ teamA, teamB, rotati
                     players={rotationB} 
                     serving={false} 
                     teamName={teamB.name} 
-                    variant="default"
+                    variant="presentation"
                     isVertical={false} // Always horizontal inside the view
                 />
             </div>

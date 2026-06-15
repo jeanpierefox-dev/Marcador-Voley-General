@@ -8,7 +8,7 @@ interface CourtProps {
   serving: boolean; // Is this side serving?
   teamName: string;
   rotationError?: boolean;
-  variant?: 'default' | 'referee'; // New prop to control sizing
+  variant?: 'default' | 'referee' | 'presentation'; // New prop to control sizing
   isVertical?: boolean; // New prop for vertical orientation
 }
 
@@ -94,7 +94,7 @@ export const Court: React.FC<CourtProps> = ({ players = [], serving, teamName, r
 
       {/* The Actual Court (Orange Area) */}
       <div className={`bg-court-main border-4 border-white relative shadow-[inset_0_0_20px_rgba(0,0,0,0.2)] 
-          ${isReferee ? 'h-64 md:h-[400px]' : isVertical ? 'h-[280px] w-full' : 'h-64 sm:h-80'}
+          ${isReferee ? 'h-64 md:h-[400px]' : (variant === 'presentation' ? 'h-80 md:h-[450px]' : isVertical ? 'h-[280px] w-full' : 'h-64 sm:h-80')}
       `}>
         
         {/* Attack Line (3m) */}
@@ -130,15 +130,19 @@ export const Court: React.FC<CourtProps> = ({ players = [], serving, teamName, r
                     <div className="flex flex-col items-center z-10 transform transition group-hover:scale-105 w-full px-1">
                       <div className={`
                         rounded-full flex items-center justify-center 
-                        font-black shadow-[0_4px_6px_rgba(0,0,0,0.3)] border-2 border-white
-                        ${playerByIndex.name === 'Libero' ? 'bg-yellow-400 text-black' : 'bg-vnl-panel text-white'}
-                        ${isReferee ? 'w-12 h-12 text-xl md:w-20 md:h-20 md:text-3xl mb-1 md:mb-2' : isVertical ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-lg'}
+                        font-black shadow-[0_4px_6px_rgba(0,0,0,0.3)] border-2 border-white overflow-hidden
+                        ${!playerByIndex.profile?.photoUrl ? (playerByIndex.name === 'Libero' ? 'bg-yellow-400 text-black' : 'bg-[#18233f] text-white') : 'bg-black'}
+                        ${isReferee ? 'w-12 h-12 text-xl md:w-20 md:h-20 md:text-3xl mb-1 md:mb-2' : (variant === 'presentation' ? 'w-16 h-16 sm:w-24 sm:h-24 text-2xl border-4' : isVertical ? 'w-8 h-8 text-xs' : 'w-12 h-12 sm:w-16 sm:h-16 text-lg')}
                       `}>
-                        {playerByIndex.number}
+                        {playerByIndex.profile?.photoUrl ? (
+                            <img src={playerByIndex.profile.photoUrl} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                            playerByIndex.number
+                        )}
                       </div>
                       <div className={`
-                        px-2 py-0.5 bg-black/60 backdrop-blur-sm rounded text-white font-bold uppercase tracking-wide truncate max-w-full text-center
-                        ${isReferee ? 'text-xs md:text-sm w-full' : isVertical ? 'text-[8px] max-w-[60px]' : 'text-[10px] max-w-[80px]'}
+                        px-2 py-0.5 mt-1 bg-black/80 backdrop-blur-sm rounded text-white font-bold uppercase tracking-wide truncate max-w-full text-center shadow-lg
+                        ${isReferee ? 'text-xs md:text-sm w-full' : (variant === 'presentation' ? 'text-[10px] md:text-sm max-w-[120px] px-3 py-1' : isVertical ? 'text-[8px] max-w-[60px]' : 'text-[9px] max-w-[80px] leading-tight')}
                       `}>
                         {playerByIndex.name.split(' ')[0]}
                       </div>
