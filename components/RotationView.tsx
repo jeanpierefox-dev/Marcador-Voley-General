@@ -54,20 +54,22 @@ export const RotationView: React.FC<RotationViewProps> = ({ teamA, teamB, rotati
         <div className={`relative flex pointer-events-auto items-center justify-center
             ${isVertical 
                 ? 'w-[85vh] h-[400px] scale-90' 
-                : 'w-full max-w-[1200px] h-[500px] scale-[0.80] md:scale-95'
+                : 'w-full max-w-[1000px] h-[450px] scale-[0.80] md:scale-95'
             }
         `}>
             {/* The Court Ground */}
-            <div className="absolute inset-x-8 md:inset-x-20 top-16 bottom-16 bg-[#e1682f] shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_0_40px_rgba(0,0,0,0.4)] border border-white/20 transform perspective-[1000px] rotateX-[40deg] rounded-sm flex">
+            <div className="absolute inset-x-4 md:inset-x-12 top-12 bottom-12 bg-[#df6632] shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-4 border-white/50 rounded flex">
                 
                 {/* Court Lines */}
-                <div className="absolute inset-4 md:inset-8 border-4 border-white/80 pointer-events-none"></div>
+                <div className="absolute inset-2 md:inset-4 border-4 border-white pointer-events-none"></div>
                 {/* Net / Center Line */}
-                <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-2 md:w-3 bg-white/90 shadow-[0_0_10px_rgba(255,255,255,0.5)] z-0 pointer-events-none"></div>
+                <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-3 md:w-4 bg-white shadow-[0_0_15px_rgba(255,255,255,0.5)] z-0 pointer-events-none flex items-center justify-center">
+                   <div className="w-1 h-full bg-slate-300"></div>
+                </div>
                 
                 {/* Attack Lines (3m) */}
-                <div className="absolute top-4 md:top-8 bottom-4 md:bottom-8 left-[33.33%] w-1 md:w-1.5 bg-white/70 pointer-events-none"></div>
-                <div className="absolute top-4 md:top-8 bottom-4 md:bottom-8 right-[33.33%] w-1 md:w-1.5 bg-white/70 pointer-events-none"></div>
+                <div className="absolute top-2 md:top-4 bottom-2 md:bottom-4 left-[33.33%] w-1 md:w-1.5 bg-white pointer-events-none"></div>
+                <div className="absolute top-2 md:top-4 bottom-2 md:bottom-4 right-[33.33%] w-1 md:w-1.5 bg-white pointer-events-none"></div>
 
                 {/* Team A Graphic Logo Underlay */}
                 <div className="absolute left-0 right-1/2 top-0 bottom-0 flex items-center justify-center opacity-10 pointer-events-none">
@@ -79,21 +81,21 @@ export const RotationView: React.FC<RotationViewProps> = ({ teamA, teamB, rotati
                 </div>
             </div>
 
-            {/* Players Layer (Rendered un-rotated so they stand upright) */}
-            <div className="absolute inset-x-8 md:inset-x-20 top-16 bottom-16 flex z-10">
+            {/* Players Layer */}
+            <div className="absolute inset-x-4 md:inset-x-12 top-12 bottom-12 flex z-10 p-2 md:p-4">
                 {/* Team A (Left) */}
-                <div className="w-1/2 relative">
-                    <div className="absolute top-8 left-8">
-                       <span className="text-white/80 font-black text-2xl md:text-4xl italic tracking-widest drop-shadow-lg uppercase">{teamA.name}</span>
+                <div className="w-1/2 relative h-full">
+                    <div className="absolute -top-16 left-0">
+                       <span className="text-white font-black text-2xl md:text-4xl italic tracking-widest drop-shadow-lg uppercase">{teamA.name}</span>
                     </div>
 
-                    <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 md:p-8 pt-20">
+                    <div className="w-full h-full grid grid-cols-2 grid-rows-3 gap-0">
                          {/* Row 1 (Top / Far side): 5 (back), 4 (front) */}
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 5), 5)}</div>
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 4), 4)}</div>
                          {/* Row 2 (Mid): 6 (back), 3 (front) */}
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 6), 6)}</div>
-                         <div className="flex items-center justify-center pl-8 md:pl-16">{renderPlayer(getPlayer(rotationA, 3), 3)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 3), 3)}</div>
                          {/* Row 3 (Bottom / Near side): 1 (back), 2 (front) */}
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 1), 1)}</div>
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 2), 2)}</div>
@@ -101,17 +103,17 @@ export const RotationView: React.FC<RotationViewProps> = ({ teamA, teamB, rotati
                 </div>
 
                 {/* Team B (Right) */}
-                <div className="w-1/2 relative">
-                    <div className="absolute top-8 right-8">
-                       <span className="text-white/80 font-black text-2xl md:text-4xl italic tracking-widest drop-shadow-lg uppercase">{teamB.name}</span>
+                <div className="w-1/2 relative h-full border-l-[1.5px] border-transparent">
+                    <div className="absolute -top-16 right-0">
+                       <span className="text-white font-black text-2xl md:text-4xl italic tracking-widest drop-shadow-lg uppercase">{teamB.name}</span>
                     </div>
 
-                    <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 md:p-8 pt-20">
+                    <div className="w-full h-full grid grid-cols-2 grid-rows-3 gap-0">
                          {/* Row 1 (Top / Far side): 2 (front), 1 (back) */}
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 2), 2)}</div>
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 1), 1)}</div>
                          {/* Row 2 (Mid): 3 (front), 6 (back) */}
-                         <div className="flex items-center justify-center pr-8 md:pr-16">{renderPlayer(getPlayer(rotationB, 3), 3)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 3), 3)}</div>
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 6), 6)}</div>
                          {/* Row 3 (Bottom / Near side): 4 (front), 5 (back) */}
                          <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 4), 4)}</div>

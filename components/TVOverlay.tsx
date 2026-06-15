@@ -641,6 +641,13 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       )}
 
 
+      {/* --- TOURNAMENT LOGO (TOP RIGHT) --- */}
+      {tournament?.logoUrl && activeShowRotation === false && !isPreMatch && renderScoreboard && (
+          <div className="absolute top-6 md:top-8 right-6 md:right-8 z-[60] animate-in fade-in zoom-in duration-500 pointer-events-none drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+              <img src={tournament.logoUrl} className="h-16 w-16 md:h-20 md:w-20 object-contain" alt="Torneo" />
+          </div>
+      )}
+
       {/* --- ROTATION OVERLAY (COURT VISUALIZATION) --- */}
       {activeShowRotation && (
           <RotationView 
@@ -1653,7 +1660,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
             <div className={`relative z-10 transition-all duration-300
                 ${isVertical 
                     ? 'absolute top-0 left-0 h-full w-32 md:w-36 flex items-center justify-center pointer-events-none' 
-                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-[98%] max-w-[1200px] px-2 md:px-0 pointer-events-none scale-[0.80] md:scale-90 flex justify-center origin-bottom'
+                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-full max-w-[900px] px-2 md:px-0 pointer-events-none scale-[0.65] md:scale-75 flex justify-center origin-bottom'
                 }
             `}
             style={(boardAnim === 'in' || boardAnim === 'out') ? {
