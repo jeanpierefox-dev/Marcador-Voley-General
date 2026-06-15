@@ -185,25 +185,35 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
       tvSettings: match.tvSettings
   });
 
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const isTransitioningRef = useRef(false);
+  const activePropsRef = useRef({
+      showScoreboard,
+      showStatsOverlay,
+      showRotation: match.showRotation,
+      tvSettings: match.tvSettings
+  });
 
   useEffect(() => {
-      // Check if any visual setting has changed
+      // Check if any visual setting has changed vs our targeted active props
       const hasChanged = 
-          showScoreboard !== visibleState.showScoreboard ||
-          showStatsOverlay !== visibleState.showStatsOverlay ||
-          match.showRotation !== visibleState.showRotation ||
-          JSON.stringify(match.tvSettings) !== JSON.stringify(visibleState.tvSettings);
+          showScoreboard !== activePropsRef.current.showScoreboard ||
+          showStatsOverlay !== activePropsRef.current.showStatsOverlay ||
+          match.showRotation !== activePropsRef.current.showRotation ||
+          JSON.stringify(match.tvSettings) !== JSON.stringify(activePropsRef.current.tvSettings);
 
-      if (hasChanged && !isTransitioning) {
-          setIsTransitioning(true);
-          
-          let timers: NodeJS.Timeout[] = [];
-          
+      if (hasChanged && !isTransitioningRef.current) {
+          isTransitioningRef.current = true;
           // Determine if we are hiding major overlays
           const isHidingMajor = 
-              (visibleState.showStatsOverlay && !showStatsOverlay) || 
-              (visibleState.showRotation && !match.showRotation);
+              (activePropsRef.current.showStatsOverlay && !showStatsOverlay) || 
+              (activePropsRef.current.showRotation && !match.showRotation) ||
+              (activePropsRef.current.tvSettings?.showVersus && !match.tvSettings?.showVersus) ||
+              (activePropsRef.current.tvSettings?.featuredPlayerMode && !match.tvSettings?.featuredPlayerMode) ||
+              (activePropsRef.current.tvSettings?.hawkEyeStatus && !match.tvSettings?.hawkEyeStatus);
+
+          activePropsRef.current = {
+             showScoreboard, showStatsOverlay, showRotation: match.showRotation, tvSettings: match.tvSettings
+          };
 
           const performStateUpdate = () => {
               setVisibleState({
@@ -216,46 +226,44 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
               
               if (showStatsOverlay && !visibleState.showStatsOverlay) {
                   setIsConstructing(true);
-                  timers.push(setTimeout(() => setIsConstructing(false), 500));
+                  setTimeout(() => setIsConstructing(false), 500);
               }
 
               if (showScoreboard && !visibleState.showScoreboard) {
                   setBoardAnim('in');
-                  timers.push(setTimeout(() => setBoardAnim('idle'), 800));
+                  setTimeout(() => setBoardAnim('idle'), 800);
               } else if (!showScoreboard && visibleState.showScoreboard) {
                   setBoardAnim('out');
-                  timers.push(setTimeout(() => setBoardAnim('idle'), 800));
+                  setTimeout(() => setBoardAnim('idle'), 800);
               }
           };
 
           const runStinger = (callback: () => void) => {
               setStingerAnim('in');
-              timers.push(setTimeout(() => {
+              setTimeout(() => {
                   callback();
                   setStingerAnim('out');
-                  timers.push(setTimeout(() => {
+                  setTimeout(() => {
                       setStingerAnim('idle');
-                      setIsTransitioning(false);
-                  }, 800));
-              }, 800));
+                      isTransitioningRef.current = false;
+                  }, 500);
+              }, 500);
           };
 
           if (isHidingMajor) {
-              // "Para salir, primero quitar el cuadro y luego el enfasis..."
               performStateUpdate();
-              timers.push(setTimeout(() => {
+              // "Para salir, primero quitar el cuadro y luego el enfasis..."
+              setTimeout(() => {
                   runStinger(() => {});
-              }, 300)); // Short delay after removing before stinger
+              }, 100);
           } else {
-              // Showing major overlay
+              // Showing major overlay - emphasize first, then show
               runStinger(() => {
                   performStateUpdate();
               });
           }
-
-          return () => timers.forEach(clearTimeout);
       }
-  }, [showScoreboard, showStatsOverlay, match.showRotation, match.tvSettings, visibleState, isTransitioning]);
+  }, [showScoreboard, showStatsOverlay, match.showRotation, match.tvSettings, visibleState]);
 
   // Use visibleState properties instead of the direct props for UI rendering
   const activeShowStatsOverlay = visibleState.showStatsOverlay;
@@ -555,8 +563,8 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           <div 
             style={{ 
                 animation: stingerAnim === 'in' 
-                    ? 'emphasisIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' 
-                    : 'emphasisOut 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' 
+                    ? 'emphasisIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' 
+                    : 'emphasisOut 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' 
             }}
           >
               <div className="flex flex-col items-center">
