@@ -203,13 +203,21 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
 
       if (hasChanged && !isTransitioningRef.current) {
           isTransitioningRef.current = true;
-          // Determine if we are hiding major overlays
-          const isHidingMajor = 
-              (activePropsRef.current.showStatsOverlay && !showStatsOverlay) || 
-              (activePropsRef.current.showRotation && !match.showRotation) ||
-              (activePropsRef.current.tvSettings?.showVersus && !match.tvSettings?.showVersus) ||
-              (activePropsRef.current.tvSettings?.featuredPlayerMode && !match.tvSettings?.featuredPlayerMode) ||
-              (activePropsRef.current.tvSettings?.hawkEyeStatus && !match.tvSettings?.hawkEyeStatus);
+          
+          const oldProps = activePropsRef.current;
+          const oldSettings = oldProps.tvSettings;
+          const newSettings = match.tvSettings;
+
+          // Determine if we are changing major overlays
+          const majorSettingsChanged = 
+              oldProps.showStatsOverlay !== showStatsOverlay ||
+              oldProps.showRotation !== match.showRotation ||
+              oldSettings?.showVersus !== newSettings?.showVersus ||
+              oldSettings?.featuredPlayerMode !== newSettings?.featuredPlayerMode ||
+              oldSettings?.showFormations !== newSettings?.showFormations ||
+              oldSettings?.showSetStatsExt !== newSettings?.showSetStatsExt ||
+              oldSettings?.showMatchStatsExt !== newSettings?.showMatchStatsExt ||
+              oldSettings?.showTopPlayersExt !== newSettings?.showTopPlayersExt;
 
           activePropsRef.current = {
              showScoreboard, showStatsOverlay, showRotation: match.showRotation, tvSettings: match.tvSettings
@@ -250,14 +258,12 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
               }, 500);
           };
 
-          if (isHidingMajor) {
+          if (!majorSettingsChanged) {
+              // No stinger for minor features
               performStateUpdate();
-              // "Para salir, primero quitar el cuadro y luego el enfasis..."
-              setTimeout(() => {
-                  runStinger(() => {});
-              }, 100);
+              isTransitioningRef.current = false;
           } else {
-              // Showing major overlay - emphasize first, then show
+              // Both hiding and showing major overlays should trigger stinger first
               runStinger(() => {
                   performStateUpdate();
               });
@@ -1660,7 +1666,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
             <div className={`relative z-10 transition-all duration-300
                 ${isVertical 
                     ? 'absolute top-0 left-0 h-full w-32 md:w-40 flex items-center justify-center pointer-events-none' 
-                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 md:px-0 pointer-events-none scale-90 md:scale-100 flex justify-center origin-bottom'
+                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-[96%] max-w-[1200px] px-4 md:px-0 pointer-events-none scale-90 md:scale-95 flex justify-center origin-bottom'
                 }
             `}
             style={(boardAnim === 'in' || boardAnim === 'out') ? {
@@ -1672,8 +1678,8 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                 
                 <div className={`bg-transparent rounded-none overflow-visible flex flex-col items-center pointer-events-auto shrink-0 relative
                     ${isVertical 
-                        ? 'rotate-90 origin-center w-[50vh] max-w-none h-10 md:h-14 shadow-[0_15px_30px_rgba(0,0,0,0.8)]' 
-                        : 'w-[90%] max-w-3xl h-10 md:h-14 shadow-[0_15px_30px_rgba(0,0,0,0.8)]'
+                        ? 'rotate-90 origin-center w-[50vh] max-w-none h-10 md:h-12 shadow-[0_15px_30px_rgba(0,0,0,0.8)]' 
+                        : 'w-full h-10 md:h-12 shadow-[0_15px_30px_rgba(0,0,0,0.8)]'
                     }
                 `}>
                     {/* Top Tab for Tournament Name */}
@@ -1856,14 +1862,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                         <div className="flex-1 flex items-center justify-between pl-2 md:pl-4 pr-0 bg-[#252a3b]" style={{ borderLeft: `4px solid ${swapSides ? '#4C8BFF' : '#827DFF'}` }}>
                             <div className="flex flex-row items-center flex-1">
                                 {/* Logo */}
-                                <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-8 h-8 md:w-12 md:h-12 mr-2">
-                                    {(swapSides ? teamB : teamA).logoUrl ? <img src={(swapSides ? teamB : teamA).logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{(swapSides ? teamB : teamA).name[0]}</div>}
-                                    {(swapSides ? match.servingTeamId === teamB.id : match.servingTeamId === teamA.id) && <div className="absolute -top-1 -right-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
+                                <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-6 h-6 md:w-10 md:h-10 mr-2">
+                                    {(swapSides ? teamB : teamA).logoUrl ? <img src={(swapSides ? teamB : teamA).logoUrl} className="w-full h-full object-contain" /> : <div className="w-full h-full bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{(swapSides ? teamB : teamA).name[0]}</div>}
+                                    {(swapSides ? match.servingTeamId === teamB.id : match.servingTeamId === teamA.id) && <div className="absolute -top-1 -right-1 text-[8px] md:text-xs bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
                                 </div>
                                 {/* Name */}
-                                <div className="flex-1 min-w-0 pr-4">
-                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{(swapSides ? teamB : teamA).name}</h2>
-                                    <div className="flex gap-1 mt-1">
+                                <div className="flex-1 min-w-0 pr-2 md:pr-4">
+                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-lg' : 'text-[10px] md:text-xl'}`}>{(swapSides ? teamB : teamA).name}</h2>
+                                    <div className="flex gap-1 mt-0.5">
                                         {Array.from({length: requiredWins}).map((_, i) => (
                                             <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < (swapSides ? winsB : winsA) ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
                                         ))}
@@ -1871,19 +1877,19 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                 </div>
                             </div>
                             {/* Score */}
-                            <div className="bg-[#181d2e] h-full flex items-center justify-center px-4 md:px-8 border-l border-white/5 border-r border-[#0f172a]">
-                                <span className={`font-black tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`} style={{ color: swapSides ? '#4C8BFF' : '#827DFF' }}>
+                            <div className="bg-[#181d2e] h-full flex items-center justify-center px-3 md:px-6 border-l border-white/5 border-r border-[#0f172a]">
+                                <span className={`font-black tabular-nums tracking-tighter leading-none ${isVertical ? 'text-xl md:text-4xl' : 'text-2xl md:text-[2.5rem]'}`} style={{ color: swapSides ? '#4C8BFF' : '#827DFF' }}>
                                     {swapSides ? match.scoreB : match.scoreA}
                                 </span>
                             </div>
                         </div>
 
                         {/* Center Info - Tournament Logo */}
-                        <div className="flex flex-col items-center justify-center z-10 relative flex-shrink-0 bg-[#0f172a] w-16 md:w-36 h-full p-2 border-x border-black/50">
+                        <div className="flex flex-col items-center justify-center z-10 relative flex-shrink-0 bg-[#0f172a] w-14 md:w-28 h-full p-2 border-x border-black/50">
                             {tournament?.logoUrl ? (
                                 <img src={tournament.logoUrl} className="h-full w-full object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
                             ) : (
-                                <div className="text-[10px] md:text-xs text-white/50 font-bold uppercase tracking-widest text-center leading-tight">
+                                <div className="text-[9px] md:text-[10px] text-white/50 font-bold uppercase tracking-widest text-center leading-tight">
                                     VS
                                 </div>
                             )}
@@ -1893,14 +1899,14 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                         <div className="flex-1 flex items-center justify-between pr-2 md:pr-4 pl-0 bg-[#2b2a3b] flex-row-reverse" style={{ borderRight: `4px solid ${swapSides ? '#827DFF' : '#4C8BFF'}` }}>
                             <div className="flex flex-row-reverse items-center flex-1">
                                 {/* Logo */}
-                                <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-8 h-8 md:w-12 md:h-12 ml-2">
-                                    {(swapSides ? teamA : teamB).logoUrl ? <img src={(swapSides ? teamA : teamB).logoUrl} className="w-full h-full object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{(swapSides ? teamA : teamB).name[0]}</div>}
-                                    {(swapSides ? match.servingTeamId === teamA.id : match.servingTeamId === teamB.id) && <div className="absolute -top-1 -left-1 text-[8px] md:text-sm bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
+                                <div className="bg-transparent rounded relative flex-shrink-0 flex items-center justify-center w-6 h-6 md:w-10 md:h-10 ml-2">
+                                    {(swapSides ? teamA : teamB).logoUrl ? <img src={(swapSides ? teamA : teamB).logoUrl} className="w-full h-full object-contain" /> : <div className="w-full h-full bg-black/40 rounded flex items-center justify-center text-slate-400 font-bold text-xs">{(swapSides ? teamA : teamB).name[0]}</div>}
+                                    {(swapSides ? match.servingTeamId === teamA.id : match.servingTeamId === teamB.id) && <div className="absolute -top-1 -left-1 text-[8px] md:text-xs bg-white rounded-full leading-none shadow-sm border border-slate-200">🏐</div>}
                                 </div>
                                 {/* Name */}
-                                <div className="flex-1 min-w-0 pl-4 flex flex-col items-end">
-                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-xl' : 'text-xs md:text-2xl'}`}>{(swapSides ? teamA : teamB).name}</h2>
-                                    <div className="flex gap-1 mt-1 justify-end">
+                                <div className="flex-1 min-w-0 pl-2 md:pl-4 flex flex-col items-end">
+                                    <h2 className={`text-white font-black uppercase tracking-widest truncate ${isVertical ? 'text-[9px] md:text-lg' : 'text-[10px] md:text-xl'}`}>{(swapSides ? teamA : teamB).name}</h2>
+                                    <div className="flex gap-1 mt-0.5 justify-end">
                                         {Array.from({length: requiredWins}).map((_, i) => (
                                             <div key={i} className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${i < (swapSides ? winsA : winsB) ? 'bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`}></div>
                                         ))}
@@ -1908,8 +1914,8 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                                 </div>
                             </div>
                             {/* Score */}
-                            <div className="bg-[#181d2e] h-full flex items-center justify-center px-4 md:px-8 border-r border-white/5 border-l border-[#0f172a]">
-                                <span className={`font-black tabular-nums tracking-tighter leading-none ${isVertical ? 'text-2xl md:text-5xl' : 'text-3xl md:text-[3.5rem]'}`} style={{ color: swapSides ? '#827DFF' : '#4C8BFF' }}>
+                            <div className="bg-[#181d2e] h-full flex items-center justify-center px-3 md:px-6 border-r border-white/5 border-l border-[#0f172a]">
+                                <span className={`font-black tabular-nums tracking-tighter leading-none ${isVertical ? 'text-xl md:text-4xl' : 'text-2xl md:text-[2.5rem]'}`} style={{ color: swapSides ? '#827DFF' : '#4C8BFF' }}>
                                     {swapSides ? match.scoreA : match.scoreB}
                                 </span>
                             </div>
