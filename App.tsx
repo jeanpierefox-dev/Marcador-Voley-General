@@ -20,21 +20,31 @@ import { generateSmartFixture, generateBasicFixture } from './services/geminiSer
 import { initCloud, syncData, pushData, loadConfig, checkForSyncLink, resetCloudData } from './services/cloud';
 
 // --- HELPERS ---
-const createEmptyPlayer = (id: string, number: number, role: PlayerRole = PlayerRole.OutsideHitter): Player => ({
-  id,
-  name: `Jugador ${number}`,
-  number,
-  role,
-  isCaptain: false,
-  stats: { points: 0, aces: 0, blocks: 0, errors: 0, matchesPlayed: 0, mvps: 0, yellowCards: 0, redCards: 0 },
-  profile: {
-    bio: "",
-    height: 180,
-    weight: 75,
-    achievements: [],
-    photoUrl: ""
-  }
-});
+const createEmptyPlayer = (id: string, number: number, role?: PlayerRole): Player => {
+  return {
+    id,
+    name: `Jugador ${number}`,
+    number,
+    role: role || PlayerRole.OutsideHitter,
+    isCaptain: false,
+    stats: { points: 0, aces: 0, blocks: 0, errors: 0, matchesPlayed: 0, mvps: 0, yellowCards: 0, redCards: 0 },
+    profile: {
+      bio: "",
+      height: 180,
+      weight: 75,
+      achievements: [],
+      photoUrl: ""
+    }
+  };
+};
+
+const getAssignedRole = (index: number): PlayerRole => {
+    if (index === 0 || index === 1) return PlayerRole.Setter; // 1, 2
+    if (index >= 2 && index <= 5) return PlayerRole.OutsideHitter; // 3, 4, 5, 6
+    if (index === 6 || index === 7) return PlayerRole.Opposite; // 7, 8
+    if (index >= 8 && index <= 10) return PlayerRole.MiddleBlocker; // 9, 10, 11
+    return PlayerRole.Libero; // 12+
+};
 
 // Initial Admin User
 const DEFAULT_ADMIN: User = { id: 'admin', username: 'admin', password: '1234', role: 'ADMIN' };
@@ -289,7 +299,7 @@ export const App: React.FC = () => {
           color: '#1e3a8a',
           coachName: newTeamCoach || 'Sin entrenador',
           logoUrl: newTeamLogo,
-          players: Array.from({ length: 12 }, (_, i) => createEmptyPlayer(`${newTeamId}-p${i+1}`, i + 1))
+          players: Array.from({ length: 12 }, (_, i) => createEmptyPlayer(`${newTeamId}-p${i+1}`, i + 1, getAssignedRole(i)))
         };
         updateTeams([...registeredTeams, newTeam]);
     }

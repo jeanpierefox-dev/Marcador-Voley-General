@@ -200,15 +200,12 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           
           let timers: NodeJS.Timeout[] = [];
           
-          // Pattern: Logo IN -> Update Content -> Logo OUT
-          setStingerAnim('in');
-          
-          if (visibleState.showScoreboard && !showScoreboard) {
-              setBoardAnim('out');
-          }
+          // Determine if we are hiding major overlays
+          const isHidingMajor = 
+              (visibleState.showStatsOverlay && !showStatsOverlay) || 
+              (visibleState.showRotation && !match.showRotation);
 
-          timers.push(setTimeout(() => {
-              // Now covered by logo, update the actual visible content
+          const performStateUpdate = () => {
               setVisibleState({
                   showScoreboard,
                   showStatsOverlay,
@@ -217,7 +214,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
               });
               setRenderScoreboard(showScoreboard);
               
-              if (showStatsOverlay) {
+              if (showStatsOverlay && !visibleState.showStatsOverlay) {
                   setIsConstructing(true);
                   timers.push(setTimeout(() => setIsConstructing(false), 500));
               }
@@ -225,17 +222,36 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
               if (showScoreboard && !visibleState.showScoreboard) {
                   setBoardAnim('in');
                   timers.push(setTimeout(() => setBoardAnim('idle'), 800));
-              } else if (!showScoreboard) {
-                  setBoardAnim('idle');
+              } else if (!showScoreboard && visibleState.showScoreboard) {
+                  setBoardAnim('out');
+                  timers.push(setTimeout(() => setBoardAnim('idle'), 800));
               }
+          };
 
-              setStingerAnim('out');
-              
+          const runStinger = (callback: () => void) => {
+              setStingerAnim('in');
               timers.push(setTimeout(() => {
-                  setStingerAnim('idle');
-                  setIsTransitioning(false);
+                  callback();
+                  setStingerAnim('out');
+                  timers.push(setTimeout(() => {
+                      setStingerAnim('idle');
+                      setIsTransitioning(false);
+                  }, 800));
               }, 800));
-          }, 800));
+          };
+
+          if (isHidingMajor) {
+              // "Para salir, primero quitar el cuadro y luego el enfasis..."
+              performStateUpdate();
+              timers.push(setTimeout(() => {
+                  runStinger(() => {});
+              }, 300)); // Short delay after removing before stinger
+          } else {
+              // Showing major overlay
+              runStinger(() => {
+                  performStateUpdate();
+              });
+          }
 
           return () => timers.forEach(clearTimeout);
       }
@@ -1032,51 +1048,54 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                         {/* The Ball Animation */}
                         {activeTvSettings.hawkEyeStatus === 'in' ? (
                             <>
-                                {/* Target impact mark */}
-                                <div className="absolute top-[30%] left-[45%] w-8 h-8 rounded-full bg-green-500/30 opacity-0 shadow-[0_0_20px_#4ade80]" style={{animation: 'showMark 2s forwards 0.5s'}}></div>
+                                {/* Permanent impact mark */}
+                                <div className="absolute w-12 h-6 rounded-[50%] bg-[#22c55e]/60 mix-blend-multiply opacity-0 shadow-[0_0_10px_#4ade80]" style={{top: '32%', left: '42%', animation: 'showMark 2s forwards 0.5s'}}></div>
                                 
-                                <div className="absolute w-10 h-10 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] flex items-center justify-center left-[43.5%]" style={{animation: 'dropInBall 2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'}}>
+                                <div className="absolute w-10 h-10 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] flex items-center justify-center pointer-events-none" style={{animation: 'dropInBall 3s cubic-bezier(0.2, 0, 0.8, 1) forwards'}}>
                                     <div className="w-full h-[1px] bg-black/20 rotate-45"></div>
                                     <div className="w-full h-[1px] bg-black/20 -rotate-45 absolute"></div>
                                 </div>
-                                <div className="absolute top-[30%] left-[45%] w-8 h-8 border-2 border-white rounded-full opacity-0" style={{animation: 'ripple 1s ease-out 0.6s forwards'}}></div>
+                                <div className="absolute w-12 h-6 border-2 border-white rounded-[50%] opacity-0" style={{top: '32%', left: '42%', animation: 'ripple 1s ease-out 0.5s forwards'}}></div>
                             </>
                         ) : (
                             <>
-                                {/* Target impact mark */}
-                                <div className="absolute top-[15%] left-[55%] w-8 h-8 rounded-full bg-red-500/30 opacity-0 shadow-[0_0_20px_#ef4444]" style={{animation: 'showMark 2s forwards 0.5s'}}></div>
+                                {/* Permanent impact mark */}
+                                <div className="absolute w-12 h-6 rounded-[50%] bg-[#ef4444]/60 mix-blend-multiply opacity-0 shadow-[0_0_10px_#ef4444]" style={{top: '20%', left: '55%', animation: 'showMark 2s forwards 0.5s'}}></div>
                                 
-                                <div className="absolute w-10 h-10 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] flex items-center justify-center left-[53.5%]" style={{animation: 'dropOutBall 2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'}}>
+                                <div className="absolute w-10 h-10 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] flex items-center justify-center pointer-events-none" style={{animation: 'dropOutBall 3s cubic-bezier(0.2, 0, 0.8, 1) forwards'}}>
                                     <div className="w-full h-[1px] bg-black/20 rotate-45"></div>
                                     <div className="w-full h-[1px] bg-black/20 -rotate-45 absolute"></div>
                                 </div>
-                                <div className="absolute top-[15%] left-[55%] w-8 h-8 border-2 border-white rounded-full opacity-0" style={{animation: 'ripple 1s ease-out 0.6s forwards'}}></div>
+                                <div className="absolute w-12 h-6 border-2 border-white rounded-[50%] opacity-0" style={{top: '20%', left: '55%', animation: 'ripple 1s ease-out 0.5s forwards'}}></div>
                             </>
                         )}
                         <style>{`
                           @keyframes dropInBall { 
-                              0% { top: -100px; transform: scale(5) rotate(0deg); opacity: 0; filter: blur(10px); } 
-                              10% { opacity: 1; }
-                              40% { top: 30%; transform: scale(0.9) rotate(360deg); filter: blur(0px); }
-                              50% { top: 25%; transform: scale(1.1) rotate(450deg); }
-                              60% { top: 30%; transform: scale(1) rotate(540deg); }
-                              100% { top: 30%; transform: scale(1) rotate(540deg); }
+                              0% { top: -20%; left: 120%; transform: scale(3) rotate(0deg); opacity: 0; filter: blur(5px); } 
+                              10% { opacity: 1; filter: blur(2px); }
+                              45% { top: 32%; left: 45%; transform: scale(0.9) rotate(200deg); filter: blur(0px); }
+                              48% { top: 35%; left: 43%; transform: scaleX(1.3) scaleY(0.7) rotate(220deg); filter: blur(0px); }
+                              52% { top: 30%; left: 42%; transform: scaleX(0.9) scaleY(1.1) rotate(240deg); filter: blur(1px); }
+                              70% { top: -100px; left: -20%; transform: scale(2) rotate(400deg); opacity: 1; filter: blur(3px); }
+                              100% { top: -100px; left: -20%; transform: scale(2) rotate(400deg); opacity: 0; }
                           }
                           @keyframes dropOutBall { 
-                              0% { top: -100px; transform: scale(5) rotate(0deg); opacity: 0; filter: blur(10px); } 
-                              10% { opacity: 1; }
-                              40% { top: 15%; transform: scale(0.9) rotate(360deg); filter: blur(0px); }
-                              50% { top: 10%; transform: scale(1.1) rotate(450deg); }
-                              60% { top: 15%; transform: scale(1) rotate(540deg); }
-                              100% { top: 15%; transform: scale(1) rotate(540deg); }
+                              0% { top: -20%; left: 120%; transform: scale(3) rotate(0deg); opacity: 0; filter: blur(5px); } 
+                              10% { opacity: 1; filter: blur(2px); }
+                              45% { top: 20%; left: 57%; transform: scale(0.9) rotate(200deg); filter: blur(0px); }
+                              48% { top: 22%; left: 56%; transform: scaleX(1.3) scaleY(0.7) rotate(220deg); filter: blur(0px); }
+                              52% { top: 18%; left: 55%; transform: scaleX(0.9) scaleY(1.1) rotate(240deg); filter: blur(1px); }
+                              70% { top: -100px; left: 10%; transform: scale(2) rotate(400deg); opacity: 1; filter: blur(3px); }
+                              100% { top: -100px; left: 10%; transform: scale(2) rotate(400deg); opacity: 0; }
                           }
                           @keyframes showMark {
-                              0% { opacity: 0; transform: scale(0.5); }
-                              100% { opacity: 1; transform: scale(1); }
+                              0% { opacity: 0; transform: scale(0.2); }
+                              60% { opacity: 0.8; transform: scale(1.1); }
+                              100% { opacity: 0.8; transform: scale(1); }
                           }
                           @keyframes ripple {
                               0% { transform: scale(0.5); opacity: 1; border-width: 4px; }
-                              100% { transform: scale(3); opacity: 0; border-width: 0px; }
+                              100% { transform: scale(4); opacity: 0; border-width: 0px; }
                           }
                         `}</style>
                   </div>
