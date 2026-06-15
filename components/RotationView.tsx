@@ -1,6 +1,5 @@
 import React from 'react';
 import { Player, Team } from '../types';
-import { Court } from './Court';
 
 interface RotationViewProps {
   teamA: Team;
@@ -11,42 +10,117 @@ interface RotationViewProps {
 }
 
 export const RotationView: React.FC<RotationViewProps> = ({ teamA, teamB, rotationA, rotationB, isVertical }) => {
+  const getPlayer = (rot: (Player | null)[], pos: number) => {
+      if (!rot) return null;
+      return rot[pos - 1]; // pos is 1..6
+  };
+
+  const renderPlayer = (p: Player | null, pos: number) => {
+      if (!p) return (
+          <div className="flex flex-col items-center justify-center relative w-16 h-16 md:w-20 md:h-20 opacity-30">
+              <div className="w-10 h-10 border-2 border-white/20 rounded-full flex items-center justify-center text-white/30 text-xs">{pos}</div>
+          </div>
+      );
+
+      return (
+          <div className="flex flex-col items-center justify-center relative group w-16 md:w-20">
+              <div className={`
+                  w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center font-black shadow-[0_10px_20px_rgba(0,0,0,0.5)] border-2 z-10
+                  ${p.profile?.photoUrl ? 'bg-black border-white' : (p.name === 'Libero' ? 'bg-yellow-400 text-black border-yellow-200' : 'bg-[#18233f] text-white border-[#4C8BFF]')}
+              `}>
+                  {p.profile?.photoUrl ? (
+                      <img src={p.profile.photoUrl} className="w-full h-full object-cover rounded-full" alt="" />
+                  ) : (
+                      <span className="text-sm md:text-xl">{p.number}</span>
+                  )}
+              </div>
+              <div className="mt-1.5 px-2 py-0.5 bg-black/80 backdrop-blur-sm rounded text-white font-bold uppercase tracking-wider truncate w-[130%] text-center shadow-lg text-[8px] md:text-[10px] border border-white/10 z-20">
+                  {p.name.split(' ')[0]}
+              </div>
+          </div>
+      );
+  };
+
   return (
-    <div className={`absolute inset-0 z-40 flex flex-col items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 pointer-events-none 
+    <div className={`absolute inset-0 z-40 flex flex-col items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300 pointer-events-none 
         ${isVertical ? 'rotate-90 origin-center' : ''}
     `}>
-        <div className="absolute top-8 text-center animate-in slide-in-from-top-10 duration-500">
-            <h2 className="text-3xl md:text-5xl font-black text-white italic tracking-[0.3em] drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]">FORMACIÓN</h2>
+        <div className="absolute top-10 text-center animate-in slide-in-from-top-10 duration-500 z-50">
+            <h2 className="text-2xl md:text-4xl font-black text-white italic tracking-[0.4em] drop-shadow-[0_0_20px_rgba(255,255,255,0.5)] uppercase">
+                Alineaciones
+            </h2>
         </div>
 
-        <div className={`flex gap-6 pointer-events-auto items-center justify-center p-8 bg-[#1a1c29]/90 border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)]
+        <div className={`relative flex pointer-events-auto items-center justify-center
             ${isVertical 
-                ? 'flex-row w-[85vh] h-[90vw] scale-90' // Rotated: Width becomes Height (85% screen height), Height becomes Width (90% screen width)
-                : 'flex-col md:flex-row w-full max-w-5xl scale-75 md:scale-95'
+                ? 'w-[85vh] h-[400px] scale-90' 
+                : 'w-full max-w-[1200px] h-[500px] scale-[0.80] md:scale-95'
             }
         `}>
-            {/* Team A Court */}
-            <div className={`flex-1 ${isVertical ? 'h-full' : 'w-full'}`}>
-                <Court 
-                    players={rotationA} 
-                    serving={false} 
-                    teamName={teamA.name} 
-                    variant="presentation"
-                    isVertical={false} // Always horizontal inside the view (rotated or not)
-                />
+            {/* The Court Ground */}
+            <div className="absolute inset-x-8 md:inset-x-20 top-16 bottom-16 bg-[#e1682f] shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_0_40px_rgba(0,0,0,0.4)] border border-white/20 transform perspective-[1000px] rotateX-[40deg] rounded-sm flex">
+                
+                {/* Court Lines */}
+                <div className="absolute inset-4 md:inset-8 border-4 border-white/80 pointer-events-none"></div>
+                {/* Net / Center Line */}
+                <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-2 md:w-3 bg-white/90 shadow-[0_0_10px_rgba(255,255,255,0.5)] z-0 pointer-events-none"></div>
+                
+                {/* Attack Lines (3m) */}
+                <div className="absolute top-4 md:top-8 bottom-4 md:bottom-8 left-[33.33%] w-1 md:w-1.5 bg-white/70 pointer-events-none"></div>
+                <div className="absolute top-4 md:top-8 bottom-4 md:bottom-8 right-[33.33%] w-1 md:w-1.5 bg-white/70 pointer-events-none"></div>
+
+                {/* Team A Graphic Logo Underlay */}
+                <div className="absolute left-0 right-1/2 top-0 bottom-0 flex items-center justify-center opacity-10 pointer-events-none">
+                    {teamA.logoUrl && <img src={teamA.logoUrl} className="w-1/2 h-1/2 object-contain grayscale" />}
+                </div>
+                {/* Team B Graphic Logo Underlay */}
+                <div className="absolute left-1/2 right-0 top-0 bottom-0 flex items-center justify-center opacity-10 pointer-events-none">
+                    {teamB.logoUrl && <img src={teamB.logoUrl} className="w-1/2 h-1/2 object-contain grayscale" />}
+                </div>
             </div>
 
-            {/* Team B Court */}
-            <div className={`flex-1 ${isVertical ? 'h-full' : 'w-full'}`}>
-                <Court 
-                    players={rotationB} 
-                    serving={false} 
-                    teamName={teamB.name} 
-                    variant="presentation"
-                    isVertical={false} // Always horizontal inside the view
-                />
+            {/* Players Layer (Rendered un-rotated so they stand upright) */}
+            <div className="absolute inset-x-8 md:inset-x-20 top-16 bottom-16 flex z-10">
+                {/* Team A (Left) */}
+                <div className="w-1/2 relative">
+                    <div className="absolute top-8 left-8">
+                       <span className="text-white/80 font-black text-2xl md:text-4xl italic tracking-widest drop-shadow-lg uppercase">{teamA.name}</span>
+                    </div>
+
+                    <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 md:p-8 pt-20">
+                         {/* Row 1 (Top / Far side): 5 (back), 4 (front) */}
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 5), 5)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 4), 4)}</div>
+                         {/* Row 2 (Mid): 6 (back), 3 (front) */}
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 6), 6)}</div>
+                         <div className="flex items-center justify-center pl-8 md:pl-16">{renderPlayer(getPlayer(rotationA, 3), 3)}</div>
+                         {/* Row 3 (Bottom / Near side): 1 (back), 2 (front) */}
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 1), 1)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationA, 2), 2)}</div>
+                    </div>
+                </div>
+
+                {/* Team B (Right) */}
+                <div className="w-1/2 relative">
+                    <div className="absolute top-8 right-8">
+                       <span className="text-white/80 font-black text-2xl md:text-4xl italic tracking-widest drop-shadow-lg uppercase">{teamB.name}</span>
+                    </div>
+
+                    <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 md:p-8 pt-20">
+                         {/* Row 1 (Top / Far side): 2 (front), 1 (back) */}
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 2), 2)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 1), 1)}</div>
+                         {/* Row 2 (Mid): 3 (front), 6 (back) */}
+                         <div className="flex items-center justify-center pr-8 md:pr-16">{renderPlayer(getPlayer(rotationB, 3), 3)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 6), 6)}</div>
+                         {/* Row 3 (Bottom / Near side): 4 (front), 5 (back) */}
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 4), 4)}</div>
+                         <div className="flex items-center justify-center">{renderPlayer(getPlayer(rotationB, 5), 5)}</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
   );
 };
+

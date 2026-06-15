@@ -639,20 +639,7 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           )}
       </div>
       )}
-      {tournament?.logoUrl && (
-          <div className={`absolute z-40 transition-all duration-500 pointer-events-none origin-top-right
-              ${isVertical 
-                  ? 'bottom-4 right-4 scale-100 origin-bottom-right rotate-90' 
-                  : 'top-6 right-4 scale-100'
-              }
-          `}>
-              <img 
-                src={tournament.logoUrl} 
-                alt="Torneo" 
-                className="h-16 w-16 md:h-24 md:w-24 object-contain drop-shadow-2xl opacity-100" 
-              />
-          </div>
-      )}
+
 
       {/* --- ROTATION OVERLAY (COURT VISUALIZATION) --- */}
       {activeShowRotation && (
@@ -1665,8 +1652,8 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           renderScoreboard && !isPreMatch && !activeShowRotation && (
             <div className={`relative z-10 transition-all duration-300
                 ${isVertical 
-                    ? 'absolute top-0 left-0 h-full w-32 md:w-40 flex items-center justify-center pointer-events-none' 
-                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-[96%] max-w-[1200px] px-4 md:px-0 pointer-events-none scale-90 md:scale-95 flex justify-center origin-bottom'
+                    ? 'absolute top-0 left-0 h-full w-32 md:w-36 flex items-center justify-center pointer-events-none' 
+                    : 'absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 w-[98%] max-w-[1200px] px-2 md:px-0 pointer-events-none scale-[0.80] md:scale-90 flex justify-center origin-bottom'
                 }
             `}
             style={(boardAnim === 'in' || boardAnim === 'out') ? {
