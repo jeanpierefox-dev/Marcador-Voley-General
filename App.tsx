@@ -4,6 +4,7 @@ import { Court } from './components/Court';
 import { ScoreControl } from './components/ScoreControl';
 import { Login } from './components/Login';
 import TVOverlay from './components/TVOverlay';
+import { VARTransmitter } from './components/VARTransmitter';
 import { UserManagement } from './components/UserManagement';
 import { SetStatsModal } from './components/SetStatsModal';
 import { CloudConfig } from './components/CloudConfig';
@@ -94,6 +95,7 @@ export const App: React.FC = () => {
   // UI States
   const [swapSides, setSwapSides] = useState(false);
   const [tvMode, setTvMode] = useState(false);
+  const [isTransmitterMode, setIsTransmitterMode] = useState(false);
   const [showBracket, setShowBracket] = useState(true);
   const [showStreamGuide, setShowStreamGuide] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
@@ -1133,6 +1135,14 @@ export const App: React.FC = () => {
 
   // --- RENDER HELPERS ---
 
+  if (isTransmitterMode) {
+      return (
+          <VARTransmitter 
+            onExit={() => setIsTransmitterMode(false)}
+          />
+      );
+  }
+
   if (!currentUser) {
       return (
           <Login 
@@ -1148,6 +1158,7 @@ export const App: React.FC = () => {
             users={users}
             isCloudConnected={isCloudConnected}
             onOpenCloudConfig={() => setShowCloudConfig(true)}
+            onEnterTransmitter={() => setIsTransmitterMode(true)}
           />
       );
   }

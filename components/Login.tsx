@@ -7,6 +7,7 @@ interface LoginProps {
   users: User[];
   isCloudConnected: boolean; 
   onOpenCloudConfig: () => void;
+  onEnterTransmitter?: () => void;
 }
 
 const AppLogoLarge = () => (
@@ -25,7 +26,7 @@ const AppLogoLarge = () => (
     </svg>
 );
 
-export const Login: React.FC<LoginProps> = ({ onLogin, users, isCloudConnected, onOpenCloudConfig }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, users, isCloudConnected, onOpenCloudConfig, onEnterTransmitter }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -106,6 +107,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, isCloudConnected, 
             >
                 Iniciar Sesión
             </button>
+            {onEnterTransmitter && (
+              <button
+                type="button"
+                onClick={onEnterTransmitter}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3.5 rounded-lg border border-white/5 shadow-md transition-all transform active:scale-[0.98] mt-3 text-sm uppercase tracking-wide flex items-center justify-center gap-2"
+              >
+                <span>📱</span> Conectar Celular (Cámara VAR)
+              </button>
+            )}
             </form>
             
              <div className="mt-8 pt-4 border-t border-white/5 flex justify-between items-center text-xs text-slate-500">

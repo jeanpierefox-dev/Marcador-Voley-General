@@ -118,6 +118,387 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   const chromaMode = 'green' as string; // Replaced local state with fallback default
   const [showUI, setShowUI] = useState(true);
 
+  // --- VAR & REPLAY SYSTEM STATE & HOOKS ---
+  const [showVarDashboard, setShowVarDashboard] = useState(false);
+  const [replayActive, setReplayActive] = useState(false);
+  const [replayPlaying, setReplayPlaying] = useState(false);
+  const [replayPlayhead, setReplayPlayhead] = useState(0);
+  const [replaySpeed, setReplaySpeed] = useState<number>(0.5); // Default 50% slow motion
+  const [activeReplayCamId, setActiveReplayCamId] = useState<string>('sim_halcon'); // Default to our cool hawk eye sim
+  const [replayTypeLabel, setReplayTypeLabel] = useState<string>('DESAFÍO VAR');
+  const [wirelessCams, setWirelessCams] = useState<{ id: string; label: string; stream: MediaStream }[]>([]);
+  const [showQRModal, setShowQRModal] = useState(false);
+
+  const varPeerRef = useRef<Peer | null>(null);
+  const replayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraBuffersRef = useRef<{ [camId: string]: ImageData[] }>({});
+
+  // Combined Camera Sources list
+  const cameras = React.useMemo(() => {
+    const list: any[] = [];
+    
+    // 1. Local camera
+    list.push({
+      id: 'local_main',
+      label: 'CÁMARA PRINCIPAL (PC)',
+      type: 'local',
+      status: (!isViewer && !cameraError) ? 'active' : 'inactive'
+    });
+
+    // 2. Wireless PeerJS cameras
+    wirelessCams.forEach(wc => {
+      list.push({
+        id: wc.id,
+        label: wc.label.toUpperCase(),
+        type: 'wireless',
+        stream: wc.stream
+      });
+    });
+
+    // 3. Simulated cameras
+    list.push({
+      id: 'sim_red',
+      label: 'CÁMARA CENTRAL - RED (SIM)',
+      type: 'simulated'
+    });
+    list.push({
+      id: 'sim_saque',
+      label: 'CÁMARA LATERAL - SAQUE (SIM)',
+      type: 'simulated'
+    });
+    list.push({
+      id: 'sim_halcon',
+      label: 'CÁMARA LÍNEA - HAWK-EYE (SIM)',
+      type: 'simulated'
+    });
+
+    return list;
+  }, [wirelessCams, isViewer, cameraError]);
+
+  // Helper to draw simulated cameras
+  const drawSimulatedFrame = (id: string, ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const now = Date.now();
+    
+    // Draw background
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, width, height);
+
+    if (id === 'sim_red') {
+      // Court view from top
+      ctx.fillStyle = '#1e3a8a'; // Blue court
+      ctx.fillRect(10, 10, width - 20, height - 20);
+      
+      // Net line
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(width / 2, 10);
+      ctx.lineTo(width / 2, height - 10);
+      ctx.stroke();
+
+      // Ball bouncing back and forth
+      const ballX = (width / 2) + Math.sin(now / 1200) * (width / 2.8);
+      const ballY = (height / 2) + Math.cos(now / 2400) * (height / 5);
+      
+      ctx.fillStyle = '#eab308'; // Yellow ball
+      ctx.beginPath();
+      ctx.arc(ballX, ballY, 8, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw simulated players as rectangles
+      ctx.fillStyle = '#ef4444'; // Team A block
+      ctx.fillRect(width/2 - 20, height/2 - 15, 8, 30);
+
+      ctx.fillStyle = '#3b82f6'; // Team B block
+      ctx.fillRect(width/2 + 12, height/2 - 15, 8, 30);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText('CAM-2 CENTRAL RED (120 FPS)', 20, 25);
+
+    } else if (id === 'sim_saque') {
+      // Side perspective view of court
+      ctx.fillStyle = '#ea580c'; // Orange court
+      ctx.fillRect(10, 45, width - 20, height - 55);
+
+      // White line of net vertical
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(width / 2, 25);
+      ctx.lineTo(width / 2, height - 10);
+      ctx.stroke();
+
+      // Net grid
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = 25; y < 65; y += 8) {
+        ctx.moveTo(width / 2 - 8, y);
+        ctx.lineTo(width / 2 + 8, y);
+      }
+      ctx.stroke();
+
+      // Serve parabola animation
+      const cycle = (now % 3500) / 3500; // 0 to 1
+      const ballX = 30 + cycle * (width - 60);
+      const ballY = height - 30 - Math.sin(cycle * Math.PI) * 80;
+
+      ctx.fillStyle = '#eab308'; // Ball
+      ctx.beginPath();
+      ctx.arc(ballX, ballY, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // HUD speed overlay
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText(`CAM-3 LATERAL (SAQUE)`, 20, 25);
+      
+      const speed = 92 + Math.floor((Math.sin(now/8000) + 1) * 12);
+      ctx.fillText(`VELOCIDAD: ${speed} km/h`, 20, 38);
+
+    } else if (id === 'sim_halcon') {
+      // Hawk Eye line collision simulation
+      ctx.fillStyle = '#1e3a8a'; // Dark court
+      ctx.fillRect(0, 0, width, height);
+
+      // White line (bottom boundary line)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, height / 2, width, 10);
+
+      // Cycle every 3 seconds
+      const cycle = (now % 3000) / 3000;
+      let ballY = 0;
+      let ballSize = 22;
+      let squash = 1;
+      let showRipple = false;
+      let isBallIn = true;
+
+      // Decide if this drop is IN or OUT
+      const isEven = Math.floor(now / 3000) % 2 === 0;
+      const targetY = height / 2 + (isEven ? 3 : -20); // Inside boundary line (In) or outside (Out)
+
+      if (cycle < 0.5) {
+        // Dropping ball
+        const dropProgress = cycle / 0.5;
+        ballY = dropProgress * targetY;
+        ballSize = 22 - dropProgress * 10;
+      } else {
+        // Impact ripple / bounce away
+        ballY = targetY;
+        ballSize = 12;
+        squash = 0.6;
+        showRipple = true;
+        isBallIn = isEven;
+      }
+
+      // Draw ripple
+      if (showRipple) {
+        ctx.strokeStyle = isBallIn ? '#22c55e' : '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const pulse = ((now % 1500) / 1500) * 35;
+        ctx.ellipse(width / 2, targetY + 5, pulse, pulse / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Draw ball shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath();
+      ctx.ellipse(width / 2, targetY + 10, ballSize, ballSize / 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw dropping ball
+      ctx.fillStyle = '#eab308';
+      ctx.beginPath();
+      ctx.ellipse(width / 2, ballY, ballSize, ballSize * squash, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText('CAM-4 HAWK-EYE LÍNEA (240 FPS)', 20, 25);
+      
+      if (showRipple) {
+        ctx.fillStyle = isBallIn ? '#22c55e' : '#ef4444';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText(isBallIn ? 'IN (DENTRO)' : 'OUT (FUERA)', width - 100, 28);
+      }
+    }
+  };
+
+  // 1. PeerJS Wireless Camera Receiver (Launches on Admin TV screen)
+  useEffect(() => {
+    if (isViewer) return;
+
+    const varPeerId = `${match.matchId}-var`;
+    console.log("Iniciando Receptor PeerJS para VAR en ID:", varPeerId);
+    
+    const peer = new Peer(varPeerId);
+    varPeerRef.current = peer;
+
+    peer.on('open', (id) => {
+      console.log('Receptor VAR abierto en ID:', id);
+    });
+
+    peer.on('call', (call) => {
+      console.log('Llamada entrante de cámara inalámbrica:', call.peer, call.metadata);
+      call.answer(new MediaStream());
+
+      call.on('stream', (remoteStream) => {
+        console.log('Señal de video activa recibida para:', call.peer);
+        const camLabel = call.metadata?.label || `Cámara Inalámbrica ${call.peer.substring(0, 4)}`;
+        
+        setWirelessCams(prev => {
+          const filtered = prev.filter(c => c.id !== call.peer);
+          return [...filtered, { id: call.peer, label: camLabel, stream: remoteStream }];
+        });
+      });
+
+      call.on('close', () => {
+        console.log('Llamada de cámara cerrada:', call.peer);
+        setWirelessCams(prev => prev.filter(c => c.id !== call.peer));
+      });
+
+      call.on('error', (err) => {
+        console.error('Error de canal de cámara:', err);
+        setWirelessCams(prev => prev.filter(c => c.id !== call.peer));
+      });
+    });
+
+    peer.on('error', (err) => {
+      console.error("Error en receptor PeerJS:", err);
+      if (err.type === 'unavailable-id') {
+         console.warn("ID predecible ya ocupado, reintentando con ID aleatorio...");
+         try { peer.destroy(); } catch(e){}
+         const fallbackPeer = new Peer();
+         varPeerRef.current = fallbackPeer;
+         fallbackPeer.on('call', (call) => {
+            call.answer(new MediaStream());
+            call.on('stream', (remoteStream) => {
+              const camLabel = call.metadata?.label || `Cámara Inalámbrica ${call.peer.substring(0, 4)}`;
+              setWirelessCams(prev => {
+                const filtered = prev.filter(c => c.id !== call.peer);
+                return [...filtered, { id: call.peer, label: camLabel, stream: remoteStream }];
+              });
+            });
+         });
+      }
+    });
+
+    return () => {
+      if (peer) {
+        try { peer.destroy(); } catch(e){}
+      }
+    };
+  }, [match.matchId, isViewer]);
+
+  // 2. Rolling Buffer Capture Loop (Captura frames cada 100ms)
+  useEffect(() => {
+    if (replayActive) return; // Congela el búfer al estar activa la repetición
+
+    const interval = setInterval(() => {
+      cameras.forEach(cam => {
+        const width = 320;
+        const height = 180;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        let frameCaptured = false;
+
+        if (cam.type === 'local' && videoRef.current && videoRef.current.srcObject) {
+          try {
+            ctx.drawImage(videoRef.current, 0, 0, width, height);
+            frameCaptured = true;
+          } catch(e){}
+        } else if (cam.type === 'wireless') {
+          const remoteVideo = document.getElementById(`video-wireless-${cam.id}`) as HTMLVideoElement;
+          if (remoteVideo && remoteVideo.readyState >= 2) {
+            try {
+              ctx.drawImage(remoteVideo, 0, 0, width, height);
+              frameCaptured = true;
+            } catch(e){}
+          }
+        } else if (cam.type === 'simulated') {
+          try {
+            drawSimulatedFrame(cam.id, ctx, width, height);
+            frameCaptured = true;
+          } catch(e){}
+        }
+
+        if (frameCaptured) {
+          const imgData = ctx.getImageData(0, 0, width, height);
+          if (!cameraBuffersRef.current[cam.id]) {
+            cameraBuffersRef.current[cam.id] = [];
+          }
+          cameraBuffersRef.current[cam.id].push(imgData);
+          if (cameraBuffersRef.current[cam.id].length > 80) { // 8 segundos (80 frames a 10fps)
+            cameraBuffersRef.current[cam.id].shift();
+          }
+        }
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [cameras, replayActive]);
+
+  // 3. Replay Rendering Loop (Dibuja los frames y avanza el playhead)
+  useEffect(() => {
+    if (!replayActive || !replayCanvasRef.current) return;
+
+    const canvas = replayCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = 640;
+    canvas.height = 360;
+
+    const renderFrame = () => {
+      const buffer = cameraBuffersRef.current[activeReplayCamId];
+      if (!buffer || buffer.length === 0) {
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px monospace';
+        ctx.fillText("BÚFER DE REPUESTO VACÍO / CARGANDO...", canvas.width / 2 - 120, canvas.height / 2);
+        return;
+      }
+
+      const index = Math.min(replayPlayhead, buffer.length - 1);
+      const imgData = buffer[index];
+      if (imgData) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = imgData.width;
+        tempCanvas.height = imgData.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        if (tempCtx) {
+          tempCtx.putImageData(imgData, 0, 0);
+          ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
+        }
+      }
+    };
+
+    renderFrame();
+
+    if (!replayPlaying) return;
+
+    const stepMs = 100 / replaySpeed;
+    const timer = setTimeout(() => {
+      setReplayPlayhead(prev => {
+        const buffer = cameraBuffersRef.current[activeReplayCamId];
+        const maxLen = buffer ? buffer.length : 80;
+        if (prev >= maxLen - 1) {
+          return 0; // Bucle infinito
+        }
+        return prev + 1;
+      });
+    }, stepMs);
+
+    return () => clearTimeout(timer);
+  }, [replayActive, replayPlaying, replayPlayhead, replaySpeed, activeReplayCamId]);
+
   // PeerJS Logic (Admin - Broadcaster)
   useEffect(() => {
       if (!isAdmin || !isBroadcasting || !videoRef.current || !videoRef.current.srcObject) return;
@@ -530,6 +911,113 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-end pb-0 font-sans bg-transparent overflow-hidden transition-all duration-300">
       
+      {/* Hidden Video Elements for WebRTC Streams */}
+      <div className="absolute w-1 h-1 opacity-0 overflow-hidden pointer-events-none">
+        {wirelessCams.map((cam) => (
+          <video
+            key={cam.id}
+            id={`video-wireless-${cam.id}`}
+            autoPlay
+            playsInline
+            muted
+            ref={(el) => {
+              if (el && el.srcObject !== cam.stream) {
+                el.srcObject = cam.stream;
+                el.play().catch(e => console.warn(e));
+              }
+            }}
+          />
+        ))}
+      </div>
+
+      {/* --- BROADCAST SLOW-MOTION REPLAY DISPLAY (TV MODE / OBS) --- */}
+      {replayActive && (
+        <div className="absolute inset-0 w-full h-full z-[30] flex flex-col items-center justify-center bg-black animate-in fade-in duration-300">
+            {/* Replay Canvas */}
+            <canvas 
+              ref={replayCanvasRef} 
+              className="w-full h-full object-contain select-none"
+            />
+            
+            {/* Sleek TV Broadcast HUD Overlays */}
+            <div className="absolute inset-x-0 top-0 p-5 md:p-8 bg-gradient-to-b from-black/90 to-transparent flex justify-between items-start pointer-events-none z-10">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-3.5 h-3.5 rounded-full bg-red-600 animate-pulse shadow-[0_0_12px_#ef4444]"></div>
+                  <span className="text-xs md:text-sm font-black tracking-[0.25em] text-red-500 uppercase font-mono">REPETICIÓN EN CURSO</span>
+                  <span className="bg-blue-600 text-white text-[9px] font-black font-mono px-2 py-0.5 rounded uppercase tracking-wider">
+                    {replayTypeLabel}
+                  </span>
+                </div>
+                <h2 className="text-xl md:text-3xl font-black text-white tracking-wide uppercase italic">
+                  {cameras.find(c => c.id === activeReplayCamId)?.label || 'Cámara Seleccionada'}
+                </h2>
+              </div>
+
+              {/* Status information right-aligned */}
+              <div className="flex flex-col items-end gap-1.5 font-mono text-[10px] md:text-xs pointer-events-auto">
+                <div className="bg-red-600/90 text-white font-black px-3.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1.5 shadow-lg border border-red-500/30">
+                  <span>🎥</span> CÁMARA LENTA {Math.round(replaySpeed * 100)}%
+                </div>
+                
+                {/* Floating active exit button right on the screen */}
+                <button 
+                  onClick={() => {
+                    setReplayActive(false);
+                    setReplayPlaying(false);
+                  }}
+                  className="mt-1 bg-red-600 hover:bg-red-500 text-white border border-red-500 px-3.5 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+                  title="Salir de la repetición y volver al partido en vivo"
+                >
+                  <span>✕</span> VOLVER AL VIVO
+                </button>
+
+                <div className="text-white/60 font-mono tracking-wider mt-1 text-[9px]">
+                  BÚFER DE REPUESTO:ÚLTIMOS 8 SEGUNDOS
+                </div>
+              </div>
+            </div>
+
+            {/* Vintage Scanlines / Static Filter */}
+            <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-white/5 to-transparent mix-blend-overlay z-[5]"></div>
+            <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-radial-gradient from-white via-black to-black mix-blend-overlay z-[5]"></div>
+            
+            {/* Big Screen "VAR" HUD Watermark */}
+            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 pointer-events-none flex flex-col items-center justify-center opacity-10 select-none z-0">
+                <div className="text-[6rem] md:text-[11rem] font-black text-white italic tracking-[0.2em] leading-none text-center">
+                    VAR
+                </div>
+                <div className="text-xs md:text-lg font-bold text-white tracking-[0.4em] uppercase text-center mt-2">
+                    SISTEMA DE VERIFICACIÓN TECNOLÓGICA
+                </div>
+            </div>
+
+            {/* Bottom Playback HUD Bar for TV view */}
+            <div className="absolute inset-x-0 bottom-6 flex justify-center pointer-events-none z-10">
+               <div className="bg-black/85 border border-white/10 backdrop-blur-md px-6 py-2.5 rounded-full flex items-center gap-4 text-[11px] font-mono font-bold text-white shadow-2xl pointer-events-auto">
+                  <span className="text-slate-400">CUADRO {replayPlayhead + 1}/80</span>
+                  <div className="w-44 h-1.5 bg-white/10 rounded-full overflow-hidden relative">
+                     <div 
+                       className="h-full bg-red-500 rounded-full transition-all duration-75"
+                       style={{ width: `${(replayPlayhead / 79) * 100}%` }}
+                     />
+                  </div>
+                  <span className="text-red-400">-{((79 - replayPlayhead) * 0.1).toFixed(1)}s</span>
+
+                  <button 
+                    onClick={() => {
+                      setReplayActive(false);
+                      setReplayPlaying(false);
+                    }}
+                    className="ml-2 bg-slate-800 hover:bg-red-600 text-white hover:text-white px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer border border-white/10"
+                  >
+                    CERRAR
+                  </button>
+               </div>
+            </div>
+        </div>
+      )}
+
       {/* Background (Chroma Key, Solid Color, or Camera) */}
       {chromaMode !== 'none' ? (
         <div 
@@ -608,6 +1096,12 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
                         className="bg-corp-accent hover:bg-corp-accent-hover text-white px-5 py-3 rounded-lg text-xs font-black transition backdrop-blur-md border border-white/20 uppercase tracking-widest shadow-[0_0_15px_rgba(59,130,246,0.5)] flex items-center gap-2 transform hover:scale-105 active:scale-95"
                     >
                         <span>🎛️</span> Volver
+                    </button>
+                    <button 
+                        onClick={() => setShowVarDashboard(!showVarDashboard)}
+                        className={`${showVarDashboard ? 'bg-red-600 hover:bg-red-500' : 'bg-slate-800 hover:bg-slate-700'} text-white px-5 py-3 rounded-lg text-xs font-black transition backdrop-blur-md border border-white/10 uppercase tracking-widest flex items-center gap-2 transform hover:scale-105 active:scale-95 shadow-md`}
+                    >
+                        <span>🎥</span> Cámaras / VAR
                     </button>
                   </div>
               )}
@@ -1971,6 +2465,369 @@ const TVOverlay: React.FC<TVOverlayProps> = ({
           </div>
       )}
 
+      {/* --- ADMIN VAR & MULTI-CÁMARA DASHBOARD CONTROL PANEL --- */}
+      {showUI && !isViewer && showVarDashboard && (
+          <div className="absolute right-6 bottom-6 z-50 bg-slate-950/95 border border-white/10 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-6 flex flex-col gap-4 max-w-sm md:max-w-md w-full absolute text-white animate-in slide-in-from-right-10 duration-300 max-h-[80vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                      <span className="text-lg">🎥</span>
+                      <div>
+                          <h4 className="text-sm font-black uppercase tracking-widest text-slate-100">Consola VAR</h4>
+                          <p className="text-[10px] text-slate-400 font-mono">ID: {match.matchId}</p>
+                      </div>
+                  </div>
+                  <button 
+                      onClick={() => setShowVarDashboard(false)}
+                      className="text-slate-400 hover:text-white text-xs font-bold bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-lg transition-all"
+                  >
+                      Ocultar
+                  </button>
+              </div>
+
+              {/* Camera Miniature Grid */}
+              <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cámaras en vivo ({cameras.length})</span>
+                      <button 
+                          onClick={() => setShowQRModal(true)}
+                          className="text-[9px] bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-bold px-2 py-1 rounded border border-blue-500/10 flex items-center gap-1 transition-all"
+                      >
+                          <span>📱</span> Enlazar Celular
+                      </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                      {cameras.map(cam => (
+                          <CameraMiniature 
+                              key={cam.id}
+                              camera={cam}
+                              localStream={videoRef.current?.srcObject as MediaStream | null}
+                              isActive={replayActive && activeReplayCamId === cam.id}
+                              onSelect={() => {
+                                  setActiveReplayCamId(cam.id);
+                                  if (!replayActive) {
+                                      // Trigger replay automatically when a camera thumbnail is clicked!
+                                      setReplayActive(true);
+                                      setReplayPlaying(false);
+                                      setReplayPlayhead(50); // Seek to a nice default action spot
+                                  }
+                              }}
+                          />
+                      ))}
+                  </div>
+              </div>
+
+              {/* Replay Controls Box */}
+              <div className="bg-black/40 border border-white/5 rounded-xl p-3.5 flex flex-col gap-3">
+                  {replayActive ? (
+                      /* Active Replay Controls */
+                      <div className="flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                              <span className="text-[10px] bg-red-600 text-white font-black px-2 py-0.5 rounded font-mono uppercase tracking-widest">
+                                  MODO REPETICIÓN
+                              </span>
+                              <button 
+                                  onClick={() => {
+                                      setReplayActive(false);
+                                      setReplayPlaying(false);
+                                  }}
+                                  className="text-[10px] bg-white/10 hover:bg-red-600 hover:text-white text-slate-300 font-bold px-2.5 py-1 rounded transition-all uppercase"
+                              >
+                                  ⏹️ Detener
+                              </button>
+                          </div>
+
+                          {/* Seek Scrubber */}
+                          <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                                  <span>T -8.0s (Iniciación)</span>
+                                  <span className="text-blue-400 font-bold">CUADRO {replayPlayhead + 1}/80</span>
+                                  <span>Vivo (Impacto)</span>
+                              </div>
+                              <input 
+                                  type="range"
+                                  min={0}
+                                  max={79}
+                                  value={replayPlayhead}
+                                  onChange={(e) => {
+                                      setReplayPlayhead(parseInt(e.target.value));
+                                      setReplayPlaying(false); // Pause on scrub for accuracy
+                                  }}
+                                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-red-500"
+                              />
+                          </div>
+
+                          {/* Playback controls row */}
+                          <div className="flex items-center justify-between gap-2 mt-1">
+                              <button 
+                                  onClick={() => setReplayPlaying(!replayPlaying)}
+                                  className={`flex-1 ${replayPlaying ? 'bg-amber-600 hover:bg-amber-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold text-xs py-2 rounded-lg transition-all uppercase tracking-wider flex items-center justify-center gap-1.5`}
+                              >
+                                  <span>{replayPlaying ? '⏸️ Pausar' : '▶️ Reproducir'}</span>
+                              </button>
+                              
+                              <div className="flex gap-1">
+                                  {[0.25, 0.5, 0.75, 1.0].map(speed => (
+                                      <button
+                                          key={speed}
+                                          onClick={() => setReplaySpeed(speed)}
+                                          className={`px-2.5 py-1.5 rounded-md text-[9px] font-black font-mono transition-all ${
+                                              replaySpeed === speed ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                          }`}
+                                      >
+                                          {speed * 100}%
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+
+                          {/* Action Label Selector */}
+                          <div className="flex flex-col gap-1 mt-1">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Etiqueta de Repetición</span>
+                              <div className="grid grid-cols-2 gap-1">
+                                  {['DESAFÍO VAR', 'REPETICIÓN ATAQUE', 'REPETICIÓN SAQUE', 'OJO DE HALCÓN'].map(lbl => (
+                                      <button
+                                          key={lbl}
+                                          onClick={() => setReplayTypeLabel(lbl)}
+                                          className={`py-1 rounded text-[9px] font-bold uppercase transition-all ${
+                                              replayTypeLabel === lbl ? 'bg-white/10 text-white border border-white/20' : 'bg-transparent text-slate-500 hover:text-slate-300'
+                                          }`}
+                                      >
+                                          {lbl}
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+                      </div>
+                  ) : (
+                      /* Launch Replay Panel */
+                      <div className="flex flex-col gap-2.5">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lanzar Repetición Instantánea</span>
+                          
+                          <button 
+                              onClick={() => {
+                                  setReplayPlayhead(0);
+                                  setReplayActive(true);
+                                  setReplayPlaying(true);
+                                  setReplaySpeed(0.5); // Default 50% slow-mo
+                              }}
+                              className="w-full bg-red-600 hover:bg-red-500 text-white text-xs font-black py-3 rounded-lg uppercase tracking-wider transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 shadow-lg shadow-red-500/10"
+                          >
+                              <span>🔴</span> REPETICIÓN CÁMARA LENTA (8s)
+                          </button>
+
+                          <div className="grid grid-cols-2 gap-1.5 mt-1">
+                              <button 
+                                  onClick={() => {
+                                      setActiveReplayCamId('sim_halcon');
+                                      setReplayPlayhead(0);
+                                      setReplayActive(true);
+                                      setReplayPlaying(true);
+                                      setReplayTypeLabel('OJO DE HALCÓN');
+                                  }}
+                                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold py-2 rounded-lg transition-all"
+                              >
+                                  🔎 OJO DE HALCÓN
+                              </button>
+                              <button 
+                                  onClick={() => {
+                                      setActiveReplayCamId('sim_red');
+                                      setReplayPlayhead(30);
+                                      setReplayActive(true);
+                                      setReplayPlaying(true);
+                                      setReplayTypeLabel('REPETICIÓN ATAQUE');
+                                  }}
+                                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold py-2 rounded-lg transition-all"
+                              >
+                                  🏐 REPETIR ATAQUE
+                              </button>
+                          </div>
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
+
+      {/* --- CELL PHONE WIRELESS LINK MODAL --- */}
+      {showQRModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+              <div className="bg-[#111625] border border-white/10 rounded-2xl max-w-md w-full p-6 text-white flex flex-col gap-4 shadow-2xl relative">
+                  <button 
+                      onClick={() => setShowQRModal(false)}
+                      className="absolute top-4 right-4 text-slate-400 hover:text-white text-sm"
+                  >
+                      ✕
+                  </button>
+
+                  <div className="text-center flex flex-col items-center gap-2">
+                      <div className="bg-blue-600/20 p-3 rounded-full text-blue-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                      </div>
+                      <h3 className="text-lg font-black uppercase tracking-wider">Enlazar Cámara Inalámbrica</h3>
+                      <p className="text-xs text-slate-400 max-w-xs">Puedes conectar múltiples teléfonos móviles como cámaras auxiliares para grabaciones multi-ángulo y análisis de VAR.</p>
+                  </div>
+
+                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                      <div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase">Instrucciones de Conexión</span>
+                          <p className="text-xs text-slate-300 mt-1">1. Abre el navegador de tu celular.</p>
+                          <p className="text-xs text-slate-300 mt-0.5">2. Ve al siguiente enlace:</p>
+                          <div className="bg-slate-900 border border-white/5 rounded px-3 py-1.5 mt-1 flex items-center justify-between">
+                              <span className="text-[10px] font-mono text-blue-400 select-all truncate max-w-[240px]">
+                                  {window.location.origin}
+                              </span>
+                              <button 
+                                  onClick={() => {
+                                      navigator.clipboard.writeText(window.location.origin);
+                                      alert("Enlace copiado al portapapeles");
+                                  }}
+                                  className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded"
+                              >
+                                  Copiar
+                              </button>
+                          </div>
+                      </div>
+
+                      <div>
+                          <p className="text-xs text-slate-300">3. Haz clic en <strong className="text-white">📱 Conectar Celular (Cámara VAR)</strong>.</p>
+                          <p className="text-xs text-slate-300 mt-0.5">4. Introduce el código de este partido:</p>
+                          <div className="bg-slate-900 border border-white/5 rounded py-1 px-3 mt-1 text-center font-mono font-bold text-yellow-400 tracking-widest text-sm uppercase">
+                              {match.matchId}
+                          </div>
+                      </div>
+                  </div>
+
+                  <button 
+                      onClick={() => setShowQRModal(false)}
+                      className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-black py-3 rounded-lg uppercase transition-all mt-2"
+                  >
+                      Entendido, Cerrar
+                  </button>
+              </div>
+          </div>
+      )}
+
+    </div>
+  );
+};
+
+// --- MULTI-CAM MINIATURE COMPONENT ---
+interface CameraMiniatureProps {
+  camera: any;
+  isActive: boolean;
+  onSelect: () => void;
+  localStream?: MediaStream | null;
+}
+
+const CameraMiniature: React.FC<CameraMiniatureProps> = ({ camera, isActive, onSelect, localStream }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (camera.type !== 'simulated' || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animId: number;
+    const draw = () => {
+      const now = Date.now();
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (camera.id === 'sim_red') {
+        ctx.fillStyle = '#1e3a8a';
+        ctx.fillRect(4, 4, canvas.width - 8, canvas.height - 8);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 4);
+        ctx.lineTo(canvas.width / 2, canvas.height - 4);
+        ctx.stroke();
+
+        const ballX = (canvas.width / 2) + Math.sin(now / 1200) * (canvas.width / 3.2);
+        const ballY = (canvas.height / 2) + Math.cos(now / 2400) * (canvas.height / 4);
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (camera.id === 'sim_saque') {
+        ctx.fillStyle = '#ea580c';
+        ctx.fillRect(4, 15, canvas.width - 8, canvas.height - 20);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 10);
+        ctx.lineTo(canvas.width / 2, canvas.height - 4);
+        ctx.stroke();
+
+        const cycle = (now % 3500) / 3500;
+        const ballX = 10 + cycle * (canvas.width - 20);
+        const ballY = canvas.height - 10 - Math.sin(cycle * Math.PI) * 20;
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, 3, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (camera.id === 'sim_halcon') {
+        ctx.fillStyle = '#1e3a8a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, canvas.height / 2, canvas.width, 4);
+
+        const cycle = (now % 3000) / 3000;
+        const targetY = canvas.height / 2 + (Math.floor(now / 3000) % 2 === 0 ? 1 : -6);
+        const ballY = cycle < 0.5 ? (cycle / 0.5) * targetY : targetY;
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, ballY, cycle >= 0.5 ? 4 : 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => cancelAnimationFrame(animId);
+  }, [camera]);
+
+  return (
+    <div 
+      onClick={onSelect}
+      className={`relative bg-slate-900 border-2 rounded-xl overflow-hidden cursor-pointer group transition-all h-[55px] md:h-[65px] flex flex-col justify-end p-1.5 ${
+        isActive ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)]' : 'border-white/10 hover:border-white/30'
+      }`}
+    >
+      {camera.type === 'simulated' ? (
+        <canvas ref={canvasRef} width={120} height={68} className="absolute inset-0 w-full h-full object-cover rounded-lg z-0 pointer-events-none" />
+      ) : camera.type === 'local' ? (
+        <video 
+          ref={(el) => {
+            if (el && el.srcObject !== (localStream || null)) {
+              el.srcObject = localStream || null;
+              el.play().catch(() => {});
+            }
+          }}
+          muted autoPlay playsInline className="absolute inset-0 w-full h-full object-cover rounded-lg z-0 pointer-events-none" 
+        />
+      ) : (
+        <video 
+          ref={(el) => {
+            if (el && el.srcObject !== (camera.stream || null)) {
+              el.srcObject = camera.stream || null;
+              el.play().catch(() => {});
+            }
+          }}
+          muted autoPlay playsInline className="absolute inset-0 w-full h-full object-cover rounded-lg z-0 pointer-events-none" 
+        />
+      )}
+
+      {/* Overlay label */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent rounded-lg z-10 pointer-events-none" />
+      <span className="text-[7px] md:text-[9px] font-black tracking-wider text-white truncate z-20 font-mono uppercase bg-black/40 px-1 py-0.5 rounded backdrop-blur-[2px]">
+        {camera.label.split(' ')[0]} {camera.type === 'simulated' ? 'SIM' : camera.type === 'wireless' ? 'WIFI' : 'PC'}
+      </span>
     </div>
   );
 };
