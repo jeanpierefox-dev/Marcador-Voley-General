@@ -214,8 +214,21 @@ export const App: React.FC = () => {
               pushData('users', [DEFAULT_ADMIN]);
           }
       });
-      const unsubTeams = syncData<any>('teams', (val) => setRegisteredTeams(normalizeArray<Team>(val)));
-      const unsubTourneys = syncData<any>('tournaments', (val) => setTournaments(normalizeArray<Tournament>(val)));
+      const unsubTeams = syncData<any>('teams', (val) => {
+          const loaded = normalizeArray<Team>(val).map(team => ({
+              ...team,
+              players: team.players || []
+          }));
+          setRegisteredTeams(loaded);
+      });
+      const unsubTourneys = syncData<any>('tournaments', (val) => {
+          const loaded = normalizeArray<Tournament>(val).map(t => ({
+              ...t,
+              teams: t.teams || [],
+              fixtures: t.fixtures || []
+          }));
+          setTournaments(loaded);
+      });
       const unsubLive = syncData<LiveMatchState | null>('liveMatch', (val) => setLiveMatch(val));
       return () => { unsubUsers(); unsubTeams(); unsubTourneys(); unsubLive(); };
   }, [isCloudConnected]);
@@ -518,8 +531,12 @@ export const App: React.FC = () => {
     const updatedFixtures = activeTournament.fixtures?.map(f => f.id === fixtureId ? {...f, status: 'live' as const} : f);
     updateActiveTournament({ fixtures: updatedFixtures });
 
-    const teamA = activeTournament.teams?.find(t => t.id === fixture.teamAId)!;
-    const teamB = activeTournament.teams?.find(t => t.id === fixture.teamBId)!;
+    const teamA = activeTournament.teams?.find(t => t.id === fixture.teamAId);
+    const teamB = activeTournament.teams?.find(t => t.id === fixture.teamBId);
+    if (!teamA || !teamB) {
+        alert("No se pudieron encontrar los equipos del partido seleccionado.");
+        return;
+    }
     const initialSet: MatchSet = { scoreA: 0, scoreB: 0, history: [], durationMinutes: 0 };
     const rotationA = teamA.players.slice(0, 6);
     const rotationB = teamB.players.slice(0, 6);
@@ -758,7 +775,8 @@ export const App: React.FC = () => {
 
   const handlePoint = (teamId: string, type: 'attack' | 'block' | 'ace' | 'opponent_error' | 'yellow_card' | 'red_card', playerId?: string) => {
     if (!liveMatch || !activeTournament) return;
-    const fixture = activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)!;
+    const fixture = activeTournament.fixtures?.find(f => f.id === liveMatch.matchId);
+    if (!fixture) return;
     const teamAId = fixture.teamAId;
     const isTeamAScoring = teamId === teamAId;
 
@@ -865,7 +883,8 @@ export const App: React.FC = () => {
 
   const handleSubtractPoint = (teamId: string) => {
     if (!liveMatch || !activeTournament || !canControlMatch) return;
-    const fixture = activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)!;
+    const fixture = activeTournament.fixtures?.find(f => f.id === liveMatch.matchId);
+    if (!fixture) return;
     const isTeamA = teamId === fixture.teamAId;
 
     updateLiveMatch(prev => {
@@ -1022,7 +1041,7 @@ export const App: React.FC = () => {
 
   // Helper to resolve team or placeholder
   const resolveTeam = (teamId: string, teams: Team[]): Team | { name: string, logoUrl?: string, id: string } | undefined => {
-      const realTeam = teams.find(t => t.id === teamId);
+      const realTeam = (teams || []).find(t => t.id === teamId);
       if (realTeam) return realTeam;
 
       // Placeholder Logic
@@ -1169,8 +1188,8 @@ export const App: React.FC = () => {
         <>
           <TVOverlay 
             match={liveMatch}
-            teamA={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)!}
-            teamB={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)!}
+            teamA={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId) || { id: 'A', name: 'Equipo A', players: [], coachName: '', color: '#ef4444' }}
+            teamB={activeTournament.teams.find(t => t.id === activeTournament?.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId) || { id: 'B', name: 'Equipo B', players: [], coachName: '', color: '#3b82f6' }}
             swapSides={swapSides}
             tournament={activeTournament}
             currentUser={currentUser}
