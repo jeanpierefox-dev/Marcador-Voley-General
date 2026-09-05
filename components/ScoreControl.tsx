@@ -221,9 +221,9 @@ export const ScoreControl: React.FC<ScoreControlProps> = ({
             <div className="bg-black/40 p-2 md:p-3 rounded border border-white/10 animate-in fade-in slide-in-from-top-2">
               <div className="flex justify-between items-center mb-2 md:mb-3">
                 <p className="text-[9px] md:text-[10px] text-vnl-accent uppercase tracking-widest font-bold">Seleccionar Jugador</p>
-                <button onClick={() => setSelectedAction(null)} className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase">Cancelar</button>
+                <button onClick={() => setSelectedAction(null)} className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase hover:text-white">Cancelar</button>
               </div>
-              <div className="grid grid-cols-3 gap-1 md:gap-2">
+              <div className="grid grid-cols-4 md:grid-cols-5 gap-1 md:gap-2 max-h-32 md:max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
                 {players.map(p => (
                   <button
                     key={p.id}
@@ -231,9 +231,11 @@ export const ScoreControl: React.FC<ScoreControlProps> = ({
                       onPoint(teamId, selectedAction, p.id);
                       setSelectedAction(null);
                     }}
-                    className="bg-white/5 border border-white/10 hover:bg-vnl-accent hover:text-black hover:border-vnl-accent text-white font-black py-1.5 md:py-2 text-[10px] md:text-sm rounded transition"
+                    className="bg-white/5 border border-white/10 hover:bg-vnl-accent hover:text-black hover:border-vnl-accent text-white font-black py-1.5 md:py-2 text-[9px] md:text-sm rounded transition flex flex-col items-center justify-center truncate"
+                    title={p.name}
                   >
-                    #{p.number}
+                    <span>#{p.number}</span>
+                    <span className="text-[7px] md:text-[9px] font-normal opacity-70 truncate w-full text-center px-1">{p.name.split(' ')[0]}</span>
                   </button>
                 ))}
               </div>

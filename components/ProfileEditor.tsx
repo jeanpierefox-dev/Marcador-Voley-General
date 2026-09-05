@@ -98,6 +98,16 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ player, currentUse
                             onChange={handleImageUpload}
                         />
                     </div>
+                    <div className="text-center">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold">O ingresar URL:</span>
+                        <input 
+                            type="url" 
+                            value={formData.photoUrl || ''} 
+                            onChange={e => handleChange('photoUrl', e.target.value)} 
+                            placeholder="https://..." 
+                            className="w-full mt-1 p-2 bg-black/40 border border-white/10 rounded text-xs text-white text-center focus:border-vnl-accent outline-none"
+                        />
+                    </div>
                 </div>
               )}
 

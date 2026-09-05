@@ -1747,7 +1747,7 @@ export const App: React.FC = () => {
                                 showRotationView={liveMatch.showRotation}
                                 teamId={activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId!}
                                 teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)?.name!}
-                                players={liveMatch.rotationA}
+                                players={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamAId)?.players || []}
                                 disabled={liveMatch.status === 'finished'}
                                 timeoutsUsed={liveMatch.timeoutsA}
                                 subsUsed={liveMatch.substitutionsA}
@@ -1777,7 +1777,7 @@ export const App: React.FC = () => {
                                 onSetServe={handleSetServe}
                                 teamId={activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId!}
                                 teamName={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)?.name!}
-                                players={liveMatch.rotationB}
+                                players={activeTournament.teams.find(t => t.id === activeTournament.fixtures?.find(f => f.id === liveMatch.matchId)?.teamBId)?.players || []}
                                 disabled={liveMatch.status === 'finished'}
                                 timeoutsUsed={liveMatch.timeoutsB}
                                 subsUsed={liveMatch.substitutionsB}
